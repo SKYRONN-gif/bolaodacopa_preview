@@ -1,0 +1,187 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verifiedUser() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function adminEmails() {
+      return [
+        "nahanmiguelbarbosa@gmail.com"
+      ];
+    }
+
+    function isAdmin() {
+      return verifiedUser()
+        && request.auth.token.email in adminEmails();
+    }
+
+    function isOwner(playerId) {
+      return verifiedUser() && request.auth.uid == playerId;
+    }
+
+    function isLegacyEmailOwner() {
+      return verifiedUser()
+        && resource.data.email is string
+        && resource.data.email == request.auth.token.email;
+    }
+
+    function isValidId(id) {
+      return id is string
+        && id.size() > 0
+        && id.size() <= 128
+        && id.matches("^[a-zA-Z0-9_\\-]+$");
+    }
+
+    function matchFieldsAreValid(data) {
+      return data.keys().hasOnly([
+        "id",
+        "teamA",
+        "teamB",
+        "flagA",
+        "flagB",
+        "date",
+        "time",
+        "startsAt",
+        "status",
+        "scoreA",
+        "scoreB",
+        "group",
+        "venue",
+        "city"
+      ]);
+    }
+
+    function matchDataIsValid(data, matchId) {
+      return matchFieldsAreValid(data)
+        && data.id == matchId
+        && isValidId(matchId)
+        && data.teamA is string
+        && data.teamA.size() > 0
+        && data.teamA.size() <= 100
+        && data.teamB is string
+        && data.teamB.size() > 0
+        && data.teamB.size() <= 100
+        && data.flagA is string
+        && data.flagA.size() <= 10
+        && data.flagB is string
+        && data.flagB.size() <= 10
+        && data.date is string
+        && data.date.size() <= 50
+        && data.time is string
+        && data.time.size() <= 50
+        && (!data.keys().hasAny(["startsAt"]) || (data.startsAt is string && data.startsAt.size() <= 40))
+        && data.group is string
+        && data.group.size() <= 50
+        && (!data.keys().hasAny(["venue"]) || (data.venue is string && data.venue.size() <= 120))
+        && (!data.keys().hasAny(["city"]) || (data.city is string && data.city.size() <= 120))
+        && data.status in ["scheduled", "finished"]
+        && (!data.keys().hasAny(["scoreA"]) || data.scoreA is number)
+        && (!data.keys().hasAny(["scoreB"]) || data.scoreB is number)
+        && (
+          data.status == "scheduled"
+          || (
+            data.keys().hasAll(["scoreA", "scoreB"])
+            && data.scoreA is number
+            && data.scoreB is number
+          )
+        );
+    }
+
+    function playerFieldsAreValid(data) {
+      return data.keys().hasOnly([
+        "id",
+        "name",
+        "avatar",
+        "predictions",
+        "points",
+        "exactHits",
+        "partialHits",
+        "errorHits",
+        "isAdmin",
+        "email"
+      ]);
+    }
+
+    function playerDataIsValid(data, playerId) {
+      return playerFieldsAreValid(data)
+        && data.id == playerId
+        && isValidId(playerId)
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 128
+        && data.avatar is string
+        && data.avatar.size() <= 10
+        && data.predictions is map
+        && data.predictions.keys().size() <= 128
+        && data.points is number
+        && data.exactHits is number
+        && data.partialHits is number
+        && data.errorHits is number
+        && data.isAdmin is bool
+        && data.email is string
+        && data.email.size() <= 254;
+    }
+
+    function ownerCreateIsSafe(playerId) {
+      return isOwner(playerId)
+        && playerDataIsValid(request.resource.data, playerId)
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.isAdmin == false
+        && request.resource.data.points == 0
+        && request.resource.data.exactHits == 0
+        && request.resource.data.partialHits == 0
+        && request.resource.data.errorHits == 0;
+    }
+
+    function protectedPlayerFieldsUnchanged() {
+      return request.resource.data.id == resource.data.id
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.isAdmin == resource.data.isAdmin
+        && request.resource.data.points == resource.data.points
+        && request.resource.data.exactHits == resource.data.exactHits
+        && request.resource.data.partialHits == resource.data.partialHits
+        && request.resource.data.errorHits == resource.data.errorHits;
+    }
+
+    function ownerUpdateIsSafe(playerId) {
+      return (isOwner(playerId) || isLegacyEmailOwner())
+        && playerDataIsValid(request.resource.data, playerId)
+        && protectedPlayerFieldsUnchanged()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name",
+          "avatar",
+          "predictions"
+        ]);
+    }
+
+    match /matches/{matchId} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && matchDataIsValid(request.resource.data, matchId);
+      allow delete: if isAdmin();
+    }
+
+    match /players/{playerId} {
+      allow read: if true;
+      allow create: if (
+        isAdmin()
+        && playerDataIsValid(request.resource.data, playerId)
+      ) || ownerCreateIsSafe(playerId);
+      allow update: if (
+        isAdmin()
+        && playerDataIsValid(request.resource.data, playerId)
+      ) || ownerUpdateIsSafe(playerId);
+      allow delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
