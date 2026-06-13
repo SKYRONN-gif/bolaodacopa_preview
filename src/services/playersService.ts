@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Player, Prediction } from '../types';
+import { normalizePlayerDocument } from './firestoreNormalizers';
 
 interface SubscribeToPlayersParams {
   onData: (players: Player[], metadata: { fromCache: boolean }) => void;
@@ -35,7 +36,11 @@ export function subscribeToPlayers({
       const loadedPlayers: Player[] = [];
 
       snapshot.forEach((document) => {
-        loadedPlayers.push(document.data() as Player);
+        const player = normalizePlayerDocument(document.id, document.data());
+
+        if (player) {
+          loadedPlayers.push(player);
+        }
       });
 
       onData(loadedPlayers, metadata);

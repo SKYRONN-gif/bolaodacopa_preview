@@ -9,6 +9,7 @@ import {
 import { sortMatchesBySchedule } from '../domain/matches';
 import { db } from '../firebase';
 import { Match } from '../types';
+import { normalizeMatchDocument } from './firestoreNormalizers';
 
 interface SubscribeToMatchesParams {
   onData: (matches: Match[], metadata: { fromCache: boolean }) => void;
@@ -59,7 +60,11 @@ export function subscribeToMatches({
       const loadedMatches: Match[] = [];
 
       snapshot.forEach((document) => {
-        loadedMatches.push(document.data() as Match);
+        const match = normalizeMatchDocument(document.id, document.data());
+
+        if (match) {
+          loadedMatches.push(match);
+        }
       });
 
       onData(sortMatchesBySchedule(loadedMatches), metadata);
@@ -84,8 +89,11 @@ export async function syncDefaultMatches(matches: Match[]): Promise<void> {
   const nextMatches: Match[] = [];
 
   snapshot.forEach((document) => {
-    const match = document.data() as Match;
-    existingMatches.set(document.id, match);
+    const match = normalizeMatchDocument(document.id, document.data());
+
+    if (match) {
+      existingMatches.set(document.id, match);
+    }
   });
 
   for (const match of matches) {

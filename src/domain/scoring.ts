@@ -29,9 +29,16 @@ export function calculatePredictionPoints(
   const matchHasNoResult =
     match.status !== 'finished' ||
     match.scoreA === undefined ||
-    match.scoreB === undefined;
+    match.scoreB === undefined ||
+    !Number.isFinite(match.scoreA) ||
+    !Number.isFinite(match.scoreB);
 
-  if (!prediction || matchHasNoResult) {
+  if (
+    !prediction ||
+    !Number.isFinite(prediction.scoreA) ||
+    !Number.isFinite(prediction.scoreB) ||
+    matchHasNoResult
+  ) {
     return { points: 0, type: 'unplayed' };
   }
 
@@ -67,7 +74,7 @@ export function computeLeaderboard(players: Player[], matches: Match[]): Player[
       matches.forEach((match) => {
         if (match.status !== 'finished') return;
 
-        const prediction = player.predictions[match.id];
+        const prediction = player.predictions?.[match.id];
 
         if (!prediction) {
           errorHits++;
