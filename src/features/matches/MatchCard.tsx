@@ -1,8 +1,9 @@
-import { Calendar, CheckCircle, Share2 } from 'lucide-react';
+import { Calendar, Share2 } from 'lucide-react';
 
-import { calculatePredictionPoints } from '../../domain/scoring';
 import { getPredictionLockMessage, isPredictionLocked } from '../../domain/rules';
+import { calculatePredictionPoints } from '../../domain/scoring';
 import { Match, Player } from '../../types';
+import { PredictionInputs } from './PredictionInputs';
 import { PredictionSide } from './types';
 
 interface EditedPrediction {
@@ -12,10 +13,8 @@ interface EditedPrediction {
 
 interface MatchCardProps {
   match: Match;
-  players: Player[];
   userPlayer: Player;
   editedPrediction?: EditedPrediction;
-  revealOthers: boolean;
   canEdit: boolean;
   onInputChange: (matchId: string, side: PredictionSide, value: string) => void;
   onSavePrediction: (matchId: string) => void;
@@ -24,10 +23,8 @@ interface MatchCardProps {
 
 export function MatchCard({
   match,
-  players,
   userPlayer,
   editedPrediction,
-  revealOthers,
   canEdit,
   onInputChange,
   onSavePrediction,
@@ -56,12 +53,6 @@ export function MatchCard({
       editedPrediction.scoreA !== (userPrediction?.scoreA?.toString() ?? '')) ||
       (editedPrediction?.scoreB !== undefined &&
         editedPrediction.scoreB !== (userPrediction?.scoreB?.toString() ?? '')));
-
-  const otherPlayers = players
-    .filter((player) => player.id !== userPlayer.id)
-    .slice(0, 4);
-
-  const showOtherPredictions = match.status === 'finished' || revealOthers;
 
   return (
     <article
@@ -118,62 +109,17 @@ export function MatchCard({
             </div>
           )}
 
-          <div className="flex items-center justify-center gap-2">
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="0"
-              disabled={isLocked || !canEdit}
-              value={currentA}
-              onChange={(event) =>
-                onInputChange(match.id, 'A', event.target.value)
-              }
-              className={`w-14 h-14 text-center font-black text-2xl border-2 rounded-lg focus:outline-none transition ${
-                isLocked || !canEdit
-                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                  : 'bg-slate-50 border-slate-200 text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
-              }`}
-            />
-
-            <span className="text-slate-400 font-black">X</span>
-
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="0"
-              disabled={isLocked || !canEdit}
-              value={currentB}
-              onChange={(event) =>
-                onInputChange(match.id, 'B', event.target.value)
-              }
-              className={`w-14 h-14 text-center font-black text-2xl border-2 rounded-lg focus:outline-none transition ${
-                isLocked || !canEdit
-                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                  : 'bg-slate-50 border-slate-200 text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
-              }`}
-            />
-          </div>
-
-          <p
-            className={`mt-2 text-[10px] font-semibold text-center ${
-              isLocked ? 'text-amber-700' : 'text-slate-400'
-            }`}
-          >
-            {canEdit ? lockMessage : 'Entre com o Google para salvar seu palpite.'}
-          </p>
-
-          {isSaveVisible && (
-            <button
-              type="button"
-              onClick={() => onSavePrediction(match.id)}
-              className="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg flex items-center gap-1 transition"
-            >
-              <CheckCircle className="w-3 h-3" />
-              <span>Salvar palpite</span>
-            </button>
-          )}
+          <PredictionInputs
+            scoreA={currentA}
+            scoreB={currentB}
+            disabled={isLocked || !canEdit}
+            canEdit={canEdit}
+            isLocked={isLocked}
+            lockMessage={lockMessage}
+            isSaveVisible={isSaveVisible}
+            onChange={(side, value) => onInputChange(match.id, side, value)}
+            onSave={() => onSavePrediction(match.id)}
+          />
         </div>
 
         <div className="col-span-2 flex flex-col items-center justify-center text-center">
@@ -187,7 +133,7 @@ export function MatchCard({
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-3">
         {pointsEarned !== null ? (
           <div className="flex items-center gap-1.5">
             {pointsType === 'exact' ? (
@@ -214,40 +160,6 @@ export function MatchCard({
             <span>Postar jogo</span>
           </button>
         )}
-
-        <div className="text-right text-[10px] min-w-0">
-          <span className="text-slate-400 block font-normal text-right">
-            Outros participantes:
-          </span>
-
-          <div className="flex gap-1.5 mt-1 justify-end max-w-[150px] overflow-x-auto select-none">
-            {otherPlayers.map((otherPlayer, index) => {
-              const otherPrediction = otherPlayer.predictions[match.id];
-
-              return (
-                <div
-                  key={otherPlayer.id || index}
-                  className={`flex flex-col items-center p-1 rounded min-w-[32px] border ${
-                    showOtherPredictions
-                      ? 'bg-slate-50 border-slate-100'
-                      : 'bg-slate-100 border-slate-200/50'
-                  }`}
-                  title={otherPlayer.name}
-                >
-                  <span className="text-xs">{otherPlayer.avatar}</span>
-
-                  <span className="font-mono text-[9px] font-bold text-slate-500 mt-0.5">
-                    {showOtherPredictions && otherPrediction
-                      ? `${otherPrediction.scoreA}x${otherPrediction.scoreB}`
-                      : showOtherPredictions && !otherPrediction
-                        ? '--'
-                        : '🔒'}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       </div>
     </article>
   );

@@ -9,7 +9,6 @@ import { Match, Player } from '../types';
 import { BulkPredictionActions } from '../features/matches/BulkPredictionActions';
 import { MatchCard } from '../features/matches/MatchCard';
 import { MatchFilterTabs } from '../features/matches/MatchFilterTabs';
-import { MatchesInfoBanner } from '../features/matches/MatchesInfoBanner';
 import {
   buildAllPredictionsClipboardText,
   buildAllPredictionsWhatsAppText,
@@ -28,7 +27,6 @@ type EditedPredictions = Record<
 
 interface MatchesListProps {
   matches: Match[];
-  players: Player[];
   userPlayer: Player;
   canEdit: boolean;
   onUpdatePrediction: (
@@ -40,12 +38,10 @@ interface MatchesListProps {
 
 export function MatchesList({
   matches,
-  players,
   userPlayer,
   canEdit,
   onUpdatePrediction,
 }: MatchesListProps) {
-  const [revealOthers, setRevealOthers] = useState(false);
   const [activeFilter, setActiveFilter] = useState<MatchFilter>('all');
   const [editedPreds, setEditedPreds] = useState<EditedPredictions>({});
   const [toast, setToast] = useState<{
@@ -68,7 +64,7 @@ export function MatchesList({
     side: PredictionSide,
     value: string
   ) => {
-    const cleanValue = value.replace(/[^0-9]/g, '');
+    const cleanValue = value.replace(/[^0-9]/g, '').slice(0, 2);
 
     setEditedPreds((currentPredictions) => ({
       ...currentPredictions,
@@ -204,13 +200,6 @@ export function MatchesList({
         </div>
       )}
 
-      <MatchesInfoBanner
-        revealOthers={revealOthers}
-        onToggleRevealOthers={() =>
-          setRevealOthers((currentValue) => !currentValue)
-        }
-      />
-
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
         <MatchFilterTabs
           matches={matches}
@@ -239,10 +228,8 @@ export function MatchesList({
             <MatchCard
               key={match.id}
               match={match}
-              players={players}
               userPlayer={userPlayer}
               editedPrediction={editedPreds[match.id]}
-              revealOthers={revealOthers}
               canEdit={canEdit}
               onInputChange={handleInputChange}
               onSavePrediction={handleSavePrediction}

@@ -11,7 +11,8 @@ export interface Match {
   flagB: string;
   date: string; // ISO string or readable
   time: string; // HH:MM
-  startsAt?: string; // ISO datetime used for prediction locking
+  startsAt: string; // ISO datetime used for prediction locking
+  startsAtMs: number; // epoch milliseconds used by Firestore rules
   status: 'scheduled' | 'finished';
   scoreA?: number; // actual score
   scoreB?: number; // actual score
@@ -36,6 +37,9 @@ export interface Player {
   exactHits: number;   // Acertos exatos (3 pts)
   partialHits: number; // Acertos parciais / Ganhador (1 pt)
   errorHits: number;   // Erros (0 pts)
+  manualPointsAdjustment?: number;
+  manualPointsAdjustmentUpdatedAt?: string;
+  lastPredictionMatchId?: string;
   isAdmin?: boolean;
   email?: string;
 }

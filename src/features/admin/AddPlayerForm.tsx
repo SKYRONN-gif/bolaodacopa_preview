@@ -11,7 +11,7 @@ interface AddPlayerFormProps {
     name: string,
     avatar: string,
     predictions: Record<string, Prediction>
-  ) => void;
+  ) => void | Promise<void>;
   onSuccess: (message: string) => void;
   onError: (message: string) => void;
 }
@@ -25,9 +25,10 @@ export function AddPlayerForm({
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerAvatar, setNewPlayerAvatar] = useState(DEFAULT_AVATAR);
   const [newPlayerPreds, setNewPlayerPreds] = useState<NewPlayerPredictions>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   const setPredValue = (matchId: string, side: 'A' | 'B', value: string) => {
-    const cleanValue = value.replace(/[^0-9]/g, '');
+    const cleanValue = value.replace(/[^0-9]/g, '').slice(0, 2);
     const numberValue: ScoreInputValue =
       cleanValue === '' ? '' : Number(cleanValue);
 
@@ -46,7 +47,7 @@ export function AddPlayerForm({
     }));
   };
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
     if (!newPlayerName.trim()) {
@@ -76,13 +77,21 @@ export function AddPlayerForm({
 
     const playerName = newPlayerName.trim();
 
-    onAddPlayer(playerName, newPlayerAvatar, preparedPredictions);
+    try {
+      setIsSaving(true);
+      await onAddPlayer(playerName, newPlayerAvatar, preparedPredictions);
 
-    setNewPlayerName('');
-    setNewPlayerAvatar(DEFAULT_AVATAR);
-    setNewPlayerPreds({});
+      setNewPlayerName('');
+      setNewPlayerAvatar(DEFAULT_AVATAR);
+      setNewPlayerPreds({});
 
-    onSuccess(`Participante ${playerName} adicionado. R$10,00 somados à premiação.`);
+      onSuccess(`Participante ${playerName} adicionado. R$10,00 somados à premiação.`);
+    } catch (error) {
+      console.warn('Erro ao adicionar participante:', error);
+      onError('Não foi possível salvar o participante no banco agora.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -108,6 +117,7 @@ export function AddPlayerForm({
               onChange={(event) => setNewPlayerName(event.target.value)}
               placeholder="Ex: Carlos Silva"
               className="app-input"
+              disabled={isSaving}
             />
           </div>
 
@@ -120,6 +130,7 @@ export function AddPlayerForm({
               value={newPlayerAvatar}
               onChange={(event) => setNewPlayerAvatar(event.target.value)}
               className="app-select text-center px-2 py-2.5"
+              disabled={isSaving}
             >
               {AVAILABLE_AVATARS.map((avatar) => (
                 <option key={avatar} value={avatar}>
@@ -164,6 +175,7 @@ export function AddPlayerForm({
                         setPredValue(match.id, 'A', event.target.value)
                       }
                       className="w-10 text-center border border-slate-200 bg-white rounded py-1 font-bold focus:ring-1 focus:ring-emerald-500"
+                      disabled={isSaving}
                     />
 
                     <span className="text-slate-400 font-bold font-mono">
@@ -180,6 +192,7 @@ export function AddPlayerForm({
                         setPredValue(match.id, 'B', event.target.value)
                       }
                       className="w-10 text-center border border-slate-200 bg-white rounded py-1 font-bold focus:ring-1 focus:ring-emerald-500"
+                      disabled={isSaving}
                     />
                   </div>
 
@@ -195,12 +208,15 @@ export function AddPlayerForm({
 
         <button
           type="submit"
-          className="w-full border border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold text-sm py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition"
+          disabled={isSaving}
+          className="w-full border border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold text-sm py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <Sparkles className="w-4 h-4" />
 
           <span>
-            Adicionar {newPlayerName || 'novo participante'} - R$ 10
+            {isSaving
+              ? 'Salvando participante...'
+              : `Adicionar ${newPlayerName || 'novo participante'} - R$ 10`}
           </span>
         </button>
       </form>

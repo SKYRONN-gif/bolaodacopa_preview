@@ -11,8 +11,8 @@ import { db } from '../firebase';
 import { Match } from '../types';
 
 interface SubscribeToMatchesParams {
-  onData: (matches: Match[]) => void;
-  onEmpty: () => void;
+  onData: (matches: Match[], metadata: { fromCache: boolean }) => void;
+  onEmpty: (metadata: { fromCache: boolean }) => void;
   onError: (error: unknown) => void;
 }
 
@@ -25,9 +25,12 @@ export function subscribeToMatches({
 
   return onSnapshot(
     matchesCol,
+    { includeMetadataChanges: true },
     (snapshot) => {
+      const metadata = { fromCache: snapshot.metadata.fromCache };
+
       if (snapshot.empty) {
-        onEmpty();
+        onEmpty(metadata);
         return;
       }
 
@@ -37,7 +40,7 @@ export function subscribeToMatches({
         loadedMatches.push(document.data() as Match);
       });
 
-      onData(sortMatchesBySchedule(loadedMatches));
+      onData(sortMatchesBySchedule(loadedMatches), metadata);
     },
     (error) => {
       onError(error);

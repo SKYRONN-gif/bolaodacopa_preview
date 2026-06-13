@@ -1,23 +1,36 @@
 import { RotateCcw } from 'lucide-react';
+import { useState } from 'react';
 
 interface AdminDangerZoneProps {
-  onSyncDefaultMatches: () => void;
+  onSyncDefaultMatches: () => void | Promise<void>;
   onSuccess: (message: string) => void;
+  onError: (message: string) => void;
 }
 
 export function AdminDangerZone({
   onSyncDefaultMatches,
   onSuccess,
+  onError,
 }: AdminDangerZoneProps) {
-  const handleResetClick = () => {
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleResetClick = async () => {
     const confirmed = window.confirm(
       'Sincronizar a tabela base de jogos? Jogos adicionados manualmente, participantes e palpites serão preservados.'
     );
 
     if (!confirmed) return;
 
-    onSyncDefaultMatches();
-    onSuccess('Tabela base sincronizada sem apagar jogos manuais nem palpites.');
+    try {
+      setIsSyncing(true);
+      await onSyncDefaultMatches();
+      onSuccess('Tabela base sincronizada sem apagar jogos manuais nem palpites.');
+    } catch (error) {
+      console.warn('Erro ao sincronizar jogos:', error);
+      onError('Não foi possível sincronizar os jogos no banco agora.');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   return (
@@ -38,10 +51,11 @@ export function AdminDangerZone({
         <button
           type="button"
           onClick={handleResetClick}
-          className="app-button-secondary flex items-center justify-center gap-1.5 shrink-0"
+          disabled={isSyncing}
+          className="app-button-secondary flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <RotateCcw className="w-3.5 h-3.5" />
-          <span>Sincronizar jogos</span>
+          <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar jogos'}</span>
         </button>
       </div>
     </section>

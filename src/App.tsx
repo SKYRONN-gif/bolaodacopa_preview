@@ -33,10 +33,15 @@ import {
 } from './services/matchesService';
 import {
   savePlayer,
+  savePlayerManualAdjustment,
   savePlayerPrediction,
+  savePlayerProfile,
   subscribeToPlayers,
 } from './services/playersService';
 import { AppTab, Match, Player, Prediction } from './types';
+
+const CAN_USE_LOCAL_FALLBACK =
+  import.meta.env.DEV || import.meta.env.VITE_ENABLE_LOCAL_FALLBACK === 'true';
 
 function createPlayerFromFirebaseUser(user: FirebaseUser): Player {
   return {
@@ -48,7 +53,10 @@ function createPlayerFromFirebaseUser(user: FirebaseUser): Player {
     exactHits: 0,
     partialHits: 0,
     errorHits: 0,
-    email: user.email || '',
+    manualPointsAdjustment: 0,
+    manualPointsAdjustmentUpdatedAt: '',
+    lastPredictionMatchId: '',
+    email: '',
     isAdmin: isAdminEmail(user.email),
   };
 }
@@ -109,6 +117,8 @@ export default function App() {
   const [userPlayer, setUserPlayer] = useState<Player | null>(null);
   const [isLoadingMatches, setIsLoadingMatches] = useState(true);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
+  const [hasPlayersSnapshotResolved, setHasPlayersSnapshotResolved] =
+    useState(false);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   const isLoading = isLoadingMatches || isLoadingPlayers;
@@ -123,6 +133,9 @@ export default function App() {
       exactHits: 0,
       partialHits: 0,
       errorHits: 0,
+      manualPointsAdjustment: 0,
+      manualPointsAdjustmentUpdatedAt: '',
+      lastPredictionMatchId: '',
       isAdmin: false,
       email: '',
     }),
@@ -156,7 +169,7 @@ export default function App() {
           error
         );
         setIsOfflineMode(true);
-        setMatches(INITIAL_MATCHES);
+        setMatches(CAN_USE_LOCAL_FALLBACK ? INITIAL_MATCHES : []);
         setIsLoadingMatches(false);
       },
     });
@@ -166,12 +179,18 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribePlayers = subscribeToPlayers({
-      onData: (loadedPlayers) => {
+      onData: (loadedPlayers, metadata) => {
         setPlayers(loadedPlayers);
+        if (!metadata.fromCache) {
+          setHasPlayersSnapshotResolved(true);
+        }
         setIsLoadingPlayers(false);
       },
-      onEmpty: () => {
+      onEmpty: (metadata) => {
         setPlayers([]);
+        if (!metadata.fromCache) {
+          setHasPlayersSnapshotResolved(true);
+        }
         setIsLoadingPlayers(false);
       },
       onError: (error) => {
@@ -181,6 +200,7 @@ export default function App() {
         );
         setIsOfflineMode(true);
         setPlayers([]);
+        setHasPlayersSnapshotResolved(false);
         setIsLoadingPlayers(false);
       },
     });
@@ -198,9 +218,11 @@ export default function App() {
       setIsOfflineMode(true);
       setIsLoadingMatches(false);
       setIsLoadingPlayers(false);
-      setMatches((currentMatches) =>
-        currentMatches.length > 0 ? currentMatches : INITIAL_MATCHES
-      );
+      setMatches((currentMatches) => {
+        if (currentMatches.length > 0) return currentMatches;
+
+        return CAN_USE_LOCAL_FALLBACK ? INITIAL_MATCHES : [];
+      });
     }, 3500);
 
     return () => window.clearTimeout(timer);
@@ -213,6 +235,7 @@ export default function App() {
     }
 
     if (isLoadingPlayers) return;
+    if (!hasPlayersSnapshotResolved) return;
 
     const existingPlayer = players.find(
       (player) =>
@@ -223,26 +246,11 @@ export default function App() {
     if (existingPlayer) {
       const normalizedPlayer: Player = {
         ...existingPlayer,
-        email: currentUser.email || existingPlayer.email || '',
+        email: existingPlayer.email || '',
         isAdmin: existingPlayer.isAdmin || isAdminEmail(currentUser.email),
       };
 
       setUserPlayer(normalizedPlayer);
-
-      if (
-        normalizedPlayer.email !== existingPlayer.email ||
-        normalizedPlayer.isAdmin !== existingPlayer.isAdmin
-      ) {
-        setPlayers((currentPlayers) =>
-          upsertPlayer(currentPlayers, normalizedPlayer)
-        );
-
-        savePlayer(normalizedPlayer).catch((error) => {
-          console.warn('Erro ao atualizar perfil no Firestore:', error);
-          setIsOfflineMode(true);
-        });
-      }
-
       return;
     }
 
@@ -255,7 +263,7 @@ export default function App() {
       console.warn('Erro ao registrar novo perfil no Firestore:', error);
       setIsOfflineMode(true);
     });
-  }, [currentUser, isLoadingPlayers, players]);
+  }, [currentUser, hasPlayersSnapshotResolved, isLoadingPlayers, players]);
 
   const handleLogin = async () => {
     try {
@@ -276,6 +284,57 @@ export default function App() {
     }
   };
 
+  const handleUpdateProfile = async (name: string, avatar: string) => {
+    if (!currentUser || !userPlayer) {
+      throw new Error('profile-user-not-ready');
+    }
+
+    if (!hasPlayersSnapshotResolved) {
+      throw new Error('profile-snapshot-not-ready');
+    }
+
+    const trimmedName = name.trim();
+
+    if (!trimmedName || trimmedName.length > 128 || avatar.length > 10) {
+      throw new Error('profile-invalid-data');
+    }
+
+    const updatedPlayer: Player = {
+      ...userPlayer,
+      name: trimmedName,
+      avatar,
+      email: userPlayer.email || '',
+      isAdmin: userPlayer.isAdmin || isAdminEmail(currentUser.email),
+    };
+
+    try {
+      await savePlayerProfile(updatedPlayer.id, trimmedName, avatar).catch(
+        async (error) => {
+          const code =
+            typeof error === 'object' && error !== null && 'code' in error
+              ? String(error.code)
+              : '';
+
+          if (code === 'not-found') {
+            await savePlayer(updatedPlayer);
+            return;
+          }
+
+          throw error;
+        }
+      );
+
+      setUserPlayer(updatedPlayer);
+      setPlayers((currentPlayers) =>
+        upsertPlayer(currentPlayers, updatedPlayer)
+      );
+    } catch (error) {
+      console.warn('Erro ao salvar perfil no Firestore:', error);
+      setIsOfflineMode(true);
+      throw error;
+    }
+  };
+
   const handleUpdatePrediction = async (
     matchId: string,
     scoreA: number,
@@ -283,6 +342,13 @@ export default function App() {
   ) => {
     if (!currentUser || !userPlayer) {
       alert('Faça login com sua conta Google para salvar seus palpites.');
+      return;
+    }
+
+    if (!hasPlayersSnapshotResolved) {
+      alert(
+        'Ainda estamos confirmando seus dados no banco. Aguarde alguns segundos ou toque em Reconectar banco antes de salvar.'
+      );
       return;
     }
 
@@ -314,7 +380,8 @@ export default function App() {
         ...userPlayer.predictions,
         [matchId]: prediction,
       },
-      email: currentUser.email || userPlayer.email || '',
+      lastPredictionMatchId: matchId,
+      email: userPlayer.email || '',
       isAdmin: isAdminEmail(currentUser.email),
     };
 
@@ -365,25 +432,24 @@ export default function App() {
       status,
     };
 
-    setMatches((currentMatches) =>
-      currentMatches.map((match) =>
-        match.id === matchId ? updatedMatch : match
-      )
-    );
-
     try {
       await saveMatch(updatedMatch);
+      setMatches((currentMatches) =>
+        currentMatches.map((match) =>
+          match.id === matchId ? updatedMatch : match
+        )
+      );
     } catch (error) {
       console.warn('Erro ao atualizar partida no Firestore:', error);
       setIsOfflineMode(true);
+      throw error;
     }
   };
 
   const handleSaveMatchDetails = async (match: Match) => {
-    setMatches((currentMatches) => upsertMatch(currentMatches, match));
-
     try {
       await saveMatch(match);
+      setMatches((currentMatches) => upsertMatch(currentMatches, match));
     } catch (error) {
       console.warn('Erro ao salvar partida no Firestore:', error);
       setIsOfflineMode(true);
@@ -405,17 +471,51 @@ export default function App() {
       exactHits: 0,
       partialHits: 0,
       errorHits: 0,
+      manualPointsAdjustment: 0,
+      manualPointsAdjustmentUpdatedAt: '',
+      lastPredictionMatchId: '',
       isAdmin: false,
       email: '',
     };
 
-    setPlayers((currentPlayers) => upsertPlayer(currentPlayers, newPlayer));
-
     try {
       await savePlayer(newPlayer);
+      setPlayers((currentPlayers) => upsertPlayer(currentPlayers, newPlayer));
     } catch (error) {
       console.warn('Erro ao adicionar participante no Firestore:', error);
       setIsOfflineMode(true);
+      throw error;
+    }
+  };
+
+  const handleUpdateManualAdjustment = async (
+    playerId: string,
+    manualPointsAdjustment: number
+  ) => {
+    const targetPlayer = players.find((player) => player.id === playerId);
+
+    if (!targetPlayer) {
+      throw new Error('player-not-found');
+    }
+
+    try {
+      await savePlayerManualAdjustment(playerId, manualPointsAdjustment);
+
+      setPlayers((currentPlayers) =>
+        currentPlayers.map((player) =>
+          player.id === playerId
+            ? {
+                ...player,
+                manualPointsAdjustment,
+                manualPointsAdjustmentUpdatedAt: new Date().toISOString(),
+              }
+            : player
+        )
+      );
+    } catch (error) {
+      console.warn('Erro ao salvar ajuste manual no Firestore:', error);
+      setIsOfflineMode(true);
+      throw error;
     }
   };
 
@@ -439,11 +539,9 @@ export default function App() {
       setIsLoadingMatches(false);
     } catch (error) {
       console.error('Erro ao sincronizar jogos padrão:', error);
-      setMatches((currentMatches) =>
-        preserveFinishedResults(INITIAL_MATCHES, currentMatches)
-      );
       setIsLoadingMatches(false);
       setIsOfflineMode(true);
+      throw error;
     }
   };
 
@@ -462,7 +560,9 @@ export default function App() {
     : null;
 
   const matchesUserPlayer = userPlayer || anonymousViewer;
-  const canEditPredictions = Boolean(currentUser && userPlayer);
+  const canEditPredictions = Boolean(
+    currentUser && userPlayer && hasPlayersSnapshotResolved
+  );
   const isCurrentUserAdmin = isAdminEmail(currentUser?.email);
 
   if (isLoading && matches.length === 0 && players.length === 0) {
@@ -490,10 +590,20 @@ export default function App() {
       <AppHeader
         currentUser={currentUser}
         avatar={currentRankingPlayer?.avatar || userPlayer?.avatar || DEFAULT_AVATAR}
+        displayName={
+          currentRankingPlayer?.name ||
+          userPlayer?.name ||
+          currentUser?.displayName ||
+          'Jogador'
+        }
         points={currentRankingPlayer?.points || 0}
         totalPrizePool={totalPrizePool}
+        canEditProfile={Boolean(
+          currentUser && userPlayer && hasPlayersSnapshotResolved
+        )}
         onLogin={handleLogin}
         onLogout={handleLogout}
+        onUpdateProfile={handleUpdateProfile}
       />
 
       <AppNavigation
@@ -550,7 +660,6 @@ export default function App() {
 
             <MatchesList
               matches={matches}
-              players={leaderboardPlayers}
               userPlayer={matchesUserPlayer}
               canEdit={canEditPredictions}
               onUpdatePrediction={handleUpdatePrediction}
@@ -569,9 +678,11 @@ export default function App() {
         {activeTab === 'admin' && isCurrentUserAdmin && (
           <AdminPanel
             matches={matches}
+            players={players}
             onUpdateMatchResult={handleUpdateMatchResult}
             onSaveMatch={handleSaveMatchDetails}
             onAddPlayer={handleAddPlayer}
+            onUpdateManualAdjustment={handleUpdateManualAdjustment}
             onSyncDefaultMatches={handleSyncDefaultMatches}
           />
         )}

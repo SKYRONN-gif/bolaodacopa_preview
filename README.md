@@ -1,10 +1,11 @@
-# Bolão da Copa 2026
+# Bolao da Copa 2026
 
-Aplicativo React + Vite para organizar palpites, ranking e premiação do bolão.
+Aplicativo React + Vite para organizar palpites, ranking, conferencia publica e
+premiacao do bolao.
 
 ## Rodar localmente
 
-1. Instale as dependências:
+1. Instale as dependencias:
 
 ```bash
 npm ci
@@ -18,7 +19,7 @@ npm ci
 npm run dev
 ```
 
-Se quiser testar sem encostar no banco de produção, use um projeto Firebase de
+Se quiser testar sem encostar no banco de producao, use um projeto Firebase de
 teste no `.env.local` ou rode com Firebase Emulator Suite:
 
 ```env
@@ -35,21 +36,41 @@ npm run build
 
 ## Deploy na Vercel
 
-Configure as variáveis `VITE_FIREBASE_*` na Vercel e publique as regras em
+Configure as variaveis `VITE_FIREBASE_*` na Vercel e publique as regras em
 `firestore.rules` no Firebase. A lista de admins do front (`VITE_ADMIN_EMAILS`)
-deve ser a mesma lista da função `adminEmails()` nas rules.
+deve ser a mesma lista da funcao `adminEmails()` nas rules.
 
-## Manutenção
+O app nao usa fallback de Firebase em producao. Se alguma variavel obrigatoria
+faltar na Vercel, o app acusa erro em vez de conectar em outro projeto.
+
+Depois de editar `firestore.rules`, publique as regras no Firebase:
+
+```bash
+npm run deploy:rules
+```
+
+Sem publicar essas rules, qualquer pessoa com o config publico do Firebase pode
+tentar escrever direto no Firestore. Publique as rules antes de liberar o link
+para os participantes.
+
+## Manutencao
 
 - Para adicionar outro admin, coloque o e-mail em `VITE_ADMIN_EMAILS`, separado
-  por vírgula, e repita o mesmo e-mail em `firestore.rules`.
-- Para alterar os avatares disponíveis no cadastro manual, edite
+  por virgula, e repita o mesmo e-mail em `firestore.rules`.
+- Para alterar os avatares disponiveis no cadastro manual, edite
   `src/config/avatars.ts`.
-- Para cadastrar próximos jogos sem mexer em código, entre como admin e use
+- Para cadastrar proximos jogos sem mexer em codigo, entre como admin e use
   `Painel ADM > Gerenciar jogos > Novo jogo`.
-- Para corrigir nome, bandeira, data, horário, grupo, estádio ou cidade de uma
+- Para corrigir nome, bandeira, data, horario, grupo, estadio ou cidade de uma
   partida, use `Painel ADM > Gerenciar jogos > Editar jogo`.
-- Para alterar os jogos base usados na sincronização do admin, edite
+- Para alterar os jogos base usados na sincronizacao do admin, edite
   `src/data.ts`.
-- O botão "Sincronizar jogos" no Painel ADM atualiza os jogos base do código e
+- O botao "Sincronizar jogos" no Painel ADM atualiza os jogos base do codigo e
   preserva jogos criados manualmente, participantes e palpites.
+- Para migrar pontos antigos que nao vierem de palpites/jogos cadastrados, use
+  `Painel ADM > Ajuste manual de pontos`. Nao edite `points` manualmente: o
+  front recalcula esse campo a partir dos jogos finalizados e soma o ajuste
+  manual.
+- Para travar palpites com seguranca, cada jogo deve ter `startsAtMs` com o
+  horario de inicio em milissegundos UTC. Jogos cadastrados pelo Painel ADM ja
+  recebem esse campo automaticamente.

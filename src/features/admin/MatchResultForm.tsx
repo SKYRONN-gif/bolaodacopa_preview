@@ -12,19 +12,22 @@ interface MatchResultFormProps {
     scoreA: number,
     scoreB: number,
     status: 'scheduled' | 'finished'
-  ) => void;
+  ) => void | Promise<void>;
   onSuccess: (message: string) => void;
+  onError: (message: string) => void;
 }
 
 export function MatchResultForm({
   matches,
   onUpdateMatchResult,
   onSuccess,
+  onError,
 }: MatchResultFormProps) {
   const [selectedMatchId, setSelectedMatchId] = useState(matches[0]?.id || '');
   const [scoreA, setScoreA] = useState<ScoreInputValue>('');
   const [scoreB, setScoreB] = useState<ScoreInputValue>('');
   const [finishMatchState, setFinishMatchState] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (matches.length === 0) {
@@ -44,7 +47,7 @@ export function MatchResultForm({
   const selectedMatch =
     matches.find((match) => match.id === selectedMatchId) || matches[0];
 
-  const syncFormWithMatch = (match: Match | undefined) => {
+  function syncFormWithMatch(match: Match | undefined) {
     if (match?.status === 'finished') {
       setScoreA(match.scoreA ?? 0);
       setScoreB(match.scoreB ?? 0);
@@ -55,7 +58,11 @@ export function MatchResultForm({
     setScoreA('');
     setScoreB('');
     setFinishMatchState(true);
-  };
+  }
+
+  useEffect(() => {
+    syncFormWithMatch(selectedMatch);
+  }, [selectedMatch?.id, selectedMatch?.scoreA, selectedMatch?.scoreB, selectedMatch?.status]);
 
   const handleMatchChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const id = event.target.value;
@@ -65,7 +72,7 @@ export function MatchResultForm({
     syncFormWithMatch(match);
   };
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
     if (!selectedMatchId) return;
@@ -73,14 +80,22 @@ export function MatchResultForm({
     const finalScoreA = scoreA === '' ? 0 : Number(scoreA);
     const finalScoreB = scoreB === '' ? 0 : Number(scoreB);
 
-    onUpdateMatchResult(
-      selectedMatchId,
-      finalScoreA,
-      finalScoreB,
-      finishMatchState ? 'finished' : 'scheduled'
-    );
+    try {
+      setIsSaving(true);
+      await onUpdateMatchResult(
+        selectedMatchId,
+        finalScoreA,
+        finalScoreB,
+        finishMatchState ? 'finished' : 'scheduled'
+      );
 
-    onSuccess('Resultado salvo. O ranking foi recalculado automaticamente.');
+      onSuccess('Resultado salvo. O ranking foi recalculado automaticamente.');
+    } catch (error) {
+      console.warn('Erro ao salvar resultado:', error);
+      onError('Não foi possível salvar o resultado no banco agora.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (matches.length === 0) {
@@ -117,6 +132,7 @@ export function MatchResultForm({
             value={selectedMatchId}
             onChange={handleMatchChange}
             className="app-select"
+            disabled={isSaving}
           >
             {matches.map((match) => (
               <option key={match.id} value={match.id}>
@@ -157,6 +173,7 @@ export function MatchResultForm({
                   }
                   className="w-16 text-center text-lg font-bold bg-white border border-slate-200 rounded-lg py-2 mt-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
                   required
+                  disabled={isSaving}
                 />
               </div>
 
@@ -185,6 +202,7 @@ export function MatchResultForm({
                   }
                   className="w-16 text-center text-lg font-bold bg-white border border-slate-200 rounded-lg py-2 mt-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
                   required
+                  disabled={isSaving}
                 />
               </div>
             </div>
@@ -196,6 +214,7 @@ export function MatchResultForm({
                   checked={finishMatchState}
                   onChange={(event) => setFinishMatchState(event.target.checked)}
                   className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  disabled={isSaving}
                 />
 
                 <span>Finalizar partida e calcular pontos</span>
@@ -206,10 +225,11 @@ export function MatchResultForm({
 
         <button
           type="submit"
-          className="app-button-primary w-full flex items-center justify-center gap-2"
+          disabled={isSaving}
+          className="app-button-primary w-full flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <Save className="w-4 h-4" />
-          <span>Salvar resultado oficial</span>
+          <span>{isSaving ? 'Salvando resultado...' : 'Salvar resultado oficial'}</span>
         </button>
       </form>
 

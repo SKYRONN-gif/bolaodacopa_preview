@@ -73,6 +73,10 @@ function toSaoPauloIso(date: string, time: string) {
   return new Date(`${date}T${time}:00-03:00`).toISOString();
 }
 
+function toSaoPauloMs(date: string, time: string) {
+  return new Date(`${date}T${time}:00-03:00`).getTime();
+}
+
 function toFormState(match: Match): MatchFormState {
   return {
     id: match.id,
@@ -219,6 +223,7 @@ export function MatchEditorForm({
       date: toBrazilianDate(form.date),
       time: form.time,
       startsAt: toSaoPauloIso(form.date, form.time),
+      startsAtMs: toSaoPauloMs(form.date, form.time),
       status: existingMatch?.status || 'scheduled',
       group: form.group.trim(),
     };
@@ -477,7 +482,8 @@ export function MatchEditorForm({
 
           <p className="text-[11px] text-emerald-900 leading-relaxed">
             Esta área aparece só para admin. Participantes comuns veem apenas
-            os jogos publicados, os campos de palpite e a conferência pública.
+            os jogos publicados, os campos de palpite, o ranking e a
+            conferência de palpites.
           </p>
         </div>
 

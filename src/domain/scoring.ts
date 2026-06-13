@@ -59,7 +59,7 @@ export function calculatePredictionPoints(
 export function computeLeaderboard(players: Player[], matches: Match[]): Player[] {
   return players
     .map((player) => {
-      let points = 0;
+      let points = player.manualPointsAdjustment || 0;
       let exactHits = 0;
       let partialHits = 0;
       let errorHits = 0;

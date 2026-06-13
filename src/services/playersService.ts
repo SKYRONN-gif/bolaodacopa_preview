@@ -9,8 +9,8 @@ import { db } from '../firebase';
 import { Player, Prediction } from '../types';
 
 interface SubscribeToPlayersParams {
-  onData: (players: Player[]) => void;
-  onEmpty: () => void;
+  onData: (players: Player[], metadata: { fromCache: boolean }) => void;
+  onEmpty: (metadata: { fromCache: boolean }) => void;
   onError: (error: unknown) => void;
 }
 
@@ -23,9 +23,12 @@ export function subscribeToPlayers({
 
   return onSnapshot(
     playersCol,
+    { includeMetadataChanges: true },
     (snapshot) => {
+      const metadata = { fromCache: snapshot.metadata.fromCache };
+
       if (snapshot.empty) {
-        onEmpty();
+        onEmpty(metadata);
         return;
       }
 
@@ -35,7 +38,7 @@ export function subscribeToPlayers({
         loadedPlayers.push(document.data() as Player);
       });
 
-      onData(loadedPlayers);
+      onData(loadedPlayers, metadata);
     },
     (error) => {
       onError(error);
@@ -54,6 +57,28 @@ export async function savePlayerPrediction(
 ): Promise<void> {
   await updateDoc(doc(db, 'players', playerId), {
     [`predictions.${matchId}`]: prediction,
+    lastPredictionMatchId: matchId,
+  });
+}
+
+export async function savePlayerProfile(
+  playerId: string,
+  name: string,
+  avatar: string
+): Promise<void> {
+  await updateDoc(doc(db, 'players', playerId), {
+    name,
+    avatar,
+  });
+}
+
+export async function savePlayerManualAdjustment(
+  playerId: string,
+  manualPointsAdjustment: number
+): Promise<void> {
+  await updateDoc(doc(db, 'players', playerId), {
+    manualPointsAdjustment,
+    manualPointsAdjustmentUpdatedAt: new Date().toISOString(),
   });
 }
 

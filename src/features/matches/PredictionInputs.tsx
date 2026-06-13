@@ -31,7 +31,7 @@ export function PredictionInputs({
   }`;
 
   const handleChange = (side: PredictionSide, value: string) => {
-    const cleanValue = value.replace(/[^0-9]/g, '');
+    const cleanValue = value.replace(/[^0-9]/g, '').slice(0, 2);
     onChange(side, cleanValue);
   };
 

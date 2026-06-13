@@ -14,53 +14,59 @@ import {
   getFirestore,
 } from 'firebase/firestore';
 
-import fallbackConfig from '../firebase-applet-config.json';
+const REQUIRED_FIREBASE_ENV_KEYS = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID',
+] as const;
+
+function getMissingFirebaseEnvKeys() {
+  const env = import.meta.env;
+
+  return REQUIRED_FIREBASE_ENV_KEYS.filter((key) => !env[key]);
+}
 
 function resolveFirebaseConfig() {
   const env = import.meta.env;
+  const missingKeys = getMissingFirebaseEnvKeys();
 
-  if (env.VITE_FIREBASE_API_KEY) {
-    return {
-      apiKey: env.VITE_FIREBASE_API_KEY,
-      authDomain: env.VITE_FIREBASE_AUTH_DOMAIN ?? '',
-      projectId: env.VITE_FIREBASE_PROJECT_ID ?? '',
-      storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET ?? '',
-      messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? '',
-      appId: env.VITE_FIREBASE_APP_ID ?? '',
-      measurementId: env.VITE_FIREBASE_MEASUREMENT_ID ?? '',
-    };
+  if (missingKeys.length > 0) {
+    throw new Error(
+      `Firebase nao configurado. Variaveis ausentes: ${missingKeys.join(', ')}`
+    );
   }
 
   return {
-    apiKey: fallbackConfig.apiKey,
-    authDomain: fallbackConfig.authDomain,
-    projectId: fallbackConfig.projectId,
-    storageBucket: fallbackConfig.storageBucket,
-    messagingSenderId: fallbackConfig.messagingSenderId,
-    appId: fallbackConfig.appId,
-    measurementId: fallbackConfig.measurementId || '',
+    apiKey: env.VITE_FIREBASE_API_KEY,
+    authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: env.VITE_FIREBASE_APP_ID ?? '',
+    measurementId: env.VITE_FIREBASE_MEASUREMENT_ID ?? '',
   };
 }
 
 function resolveDatabaseId(): string | undefined {
   const env = import.meta.env;
 
-  if (env.VITE_FIREBASE_DATABASE_ID) {
-    const databaseId = env.VITE_FIREBASE_DATABASE_ID;
-    return databaseId === '(default)' ? undefined : databaseId;
-  }
-
-  if (env.VITE_FIREBASE_API_KEY) {
+  if (!env.VITE_FIREBASE_DATABASE_ID) {
     return undefined;
   }
 
-  return fallbackConfig.firestoreDatabaseId || undefined;
+  const databaseId = env.VITE_FIREBASE_DATABASE_ID;
+
+  return databaseId === '(default)' ? undefined : databaseId;
 }
 
 const firebaseConfig = resolveFirebaseConfig();
 const app = initializeApp(firebaseConfig);
 const databaseId = resolveDatabaseId();
 
+export const firebaseProjectId = firebaseConfig.projectId;
 export const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();

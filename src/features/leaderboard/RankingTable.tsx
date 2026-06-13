@@ -9,6 +9,7 @@ import {
   SECOND_PLACE_PERCENTAGE,
 } from '../../domain/finance';
 import { Player } from '../../types';
+import { getManualAdjustmentText } from './manualAdjustment';
 
 interface RankingTableProps {
   paidPlayersCount: number;
@@ -59,6 +60,7 @@ export function RankingTable({
             const isAdmin = isAdminPlayer(player);
             const paidRank = getPaidRank(players, index);
             const prizeText = getPrizeText(paidRank, paidPlayersCount);
+            const manualAdjustmentText = getManualAdjustmentText(player);
 
             return (
               <motion.tr
@@ -129,6 +131,12 @@ export function RankingTable({
                           {prizeText}
                         </span>
                       ) : null}
+
+                      {manualAdjustmentText && (
+                        <span className="block text-[10px] font-semibold text-blue-600">
+                          {manualAdjustmentText}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </td>

@@ -9,6 +9,7 @@ import {
   SECOND_PLACE_PERCENTAGE,
 } from '../../domain/finance';
 import { Player } from '../../types';
+import { getManualAdjustmentText } from './manualAdjustment';
 
 interface RankingMobileListProps {
   paidPlayersCount: number;
@@ -42,6 +43,7 @@ export function RankingMobileList({
         const isAdmin = isAdminPlayer(player);
         const paidRank = getPaidRank(players, index);
         const prizeText = getPrizeText(paidRank, paidPlayersCount);
+        const manualAdjustmentText = getManualAdjustmentText(player);
 
         return (
           <motion.article
@@ -104,6 +106,12 @@ export function RankingMobileList({
                       {prizeText}
                     </p>
                   ) : null}
+
+                  {manualAdjustmentText && (
+                    <p className="text-[11px] font-semibold mt-0.5 text-blue-600">
+                      {manualAdjustmentText}
+                    </p>
+                  )}
                 </div>
               </div>
 
