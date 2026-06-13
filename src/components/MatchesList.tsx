@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Match, Player } from '../types';
 import { BulkPredictionActions } from '../features/matches/BulkPredictionActions';
@@ -36,6 +37,8 @@ interface MatchesListProps {
   ) => void | Promise<void>;
 }
 
+const MATCHES_PAGE_SIZE = 24;
+
 export function MatchesList({
   matches,
   userPlayer,
@@ -43,6 +46,7 @@ export function MatchesList({
   onUpdatePrediction,
 }: MatchesListProps) {
   const [activeFilter, setActiveFilter] = useState<MatchFilter>('all');
+  const [currentPage, setCurrentPage] = useState(1);
   const [editedPreds, setEditedPreds] = useState<EditedPredictions>({});
   const [toast, setToast] = useState<{
     message: string;
@@ -175,12 +179,37 @@ export function MatchesList({
     }
   };
 
-  const filteredMatches = matches.filter((match) => {
-    if (activeFilter === 'scheduled') return match.status === 'scheduled';
-    if (activeFilter === 'finished') return match.status === 'finished';
+  const filteredMatches = useMemo(
+    () =>
+      matches.filter((match) => {
+        if (activeFilter === 'scheduled') return match.status === 'scheduled';
+        if (activeFilter === 'finished') return match.status === 'finished';
 
-    return true;
-  });
+        return true;
+      }),
+    [activeFilter, matches]
+  );
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredMatches.length / MATCHES_PAGE_SIZE)
+  );
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const firstVisibleMatchIndex = (safeCurrentPage - 1) * MATCHES_PAGE_SIZE;
+  const visibleMatches = filteredMatches.slice(
+    firstVisibleMatchIndex,
+    firstVisibleMatchIndex + MATCHES_PAGE_SIZE
+  );
+  const visibleStart =
+    filteredMatches.length === 0 ? 0 : firstVisibleMatchIndex + 1;
+  const visibleEnd = Math.min(
+    firstVisibleMatchIndex + visibleMatches.length,
+    filteredMatches.length
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeFilter, matches.length]);
 
   return (
     <div className="space-y-6 relative" id="matches-section">
@@ -223,20 +252,59 @@ export function MatchesList({
           Nenhuma partida encontrada para este filtro.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {filteredMatches.map((match) => (
-            <MatchCard
-              key={match.id}
-              match={match}
-              userPlayer={userPlayer}
-              editedPrediction={editedPreds[match.id]}
-              canEdit={canEdit}
-              onInputChange={handleInputChange}
-              onSavePrediction={handleSavePrediction}
-              onShareMatchWhatsApp={handleShareMatchWhatsApp}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {visibleMatches.map((match) => (
+              <MatchCard
+                key={match.id}
+                match={match}
+                userPlayer={userPlayer}
+                editedPrediction={editedPreds[match.id]}
+                canEdit={canEdit}
+                onInputChange={handleInputChange}
+                onSavePrediction={handleSavePrediction}
+                onShareMatchWhatsApp={handleShareMatchWhatsApp}
+              />
+            ))}
+          </div>
+
+          <div className="app-soft-panel px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-[11px] font-semibold text-slate-500">
+              Mostrando {visibleStart}-{visibleEnd} de {filteredMatches.length}{' '}
+              partidas
+            </span>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={safeCurrentPage === 1}
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Pagina anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <span className="text-[11px] font-mono font-bold text-slate-500 min-w-[86px] text-center">
+                  {safeCurrentPage} / {totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCurrentPage((page) => Math.min(totalPages, page + 1))
+                  }
+                  disabled={safeCurrentPage === totalPages}
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Proxima pagina"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

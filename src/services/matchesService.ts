@@ -16,6 +16,28 @@ interface SubscribeToMatchesParams {
   onError: (error: unknown) => void;
 }
 
+const FIRESTORE_BATCH_WRITE_LIMIT = 450;
+
+async function writeMatchesInBatches(matches: Match[]): Promise<void> {
+  let batch = writeBatch(db);
+  let pendingWrites = 0;
+
+  for (const match of matches) {
+    batch.set(doc(db, 'matches', match.id), match);
+    pendingWrites++;
+
+    if (pendingWrites >= FIRESTORE_BATCH_WRITE_LIMIT) {
+      await batch.commit();
+      batch = writeBatch(db);
+      pendingWrites = 0;
+    }
+  }
+
+  if (pendingWrites > 0) {
+    await batch.commit();
+  }
+}
+
 export function subscribeToMatches({
   onData,
   onEmpty,
@@ -53,19 +75,13 @@ export async function saveMatch(match: Match): Promise<void> {
 }
 
 export async function seedMatches(matches: Match[]): Promise<void> {
-  const batch = writeBatch(db);
-
-  for (const match of matches) {
-    batch.set(doc(db, 'matches', match.id), match);
-  }
-
-  await batch.commit();
+  await writeMatchesInBatches(matches);
 }
 
 export async function syncDefaultMatches(matches: Match[]): Promise<void> {
   const snapshot = await getDocs(collection(db, 'matches'));
   const existingMatches = new Map<string, Match>();
-  const batch = writeBatch(db);
+  const nextMatches: Match[] = [];
 
   snapshot.forEach((document) => {
     const match = document.data() as Match;
@@ -86,8 +102,8 @@ export async function syncDefaultMatches(matches: Match[]): Promise<void> {
       nextMatch.scoreB = existingMatch.scoreB;
     }
 
-    batch.set(doc(db, 'matches', match.id), nextMatch);
+    nextMatches.push(nextMatch);
   }
 
-  await batch.commit();
+  await writeMatchesInBatches(nextMatches);
 }

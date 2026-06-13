@@ -1,20 +1,27 @@
-import { Clock3, Eye, ListChecks } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Eye,
+  ListChecks,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { calculatePredictionPoints } from '../../domain/scoring';
-import { Match, Player, Prediction } from '../../types';
+import { Match, Player } from '../../types';
+import {
+  buildPredictionAuditRows,
+  filterAuditRowsByMatch,
+  paginateRows,
+} from './auditRows';
+import type { PredictionAuditRow } from './auditRows';
 
 interface PredictionsAuditTableProps {
   matches: Match[];
   players: Player[];
 }
 
-interface PredictionAuditRow {
-  key: string;
-  match: Match;
-  player: Player;
-  prediction: Prediction;
-}
+const AUDIT_PAGE_SIZE = 50;
 
 function formatDateTime(value?: string) {
   if (!value) return 'Não informado';
@@ -70,45 +77,34 @@ export function PredictionsAuditTable({
   players,
 }: PredictionsAuditTableProps) {
   const [selectedMatchId, setSelectedMatchId] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const rows = useMemo<PredictionAuditRow[]>(() => {
-    const matchesById = new Map(matches.map((match) => [match.id, match]));
-    const collectedRows: PredictionAuditRow[] = [];
+  const rows = useMemo(
+    () => buildPredictionAuditRows(matches, players),
+    [matches, players]
+  );
 
-    players.forEach((player) => {
-      Object.entries(player.predictions || {}).forEach(([matchId, prediction]) => {
-        const match = matchesById.get(matchId);
+  const filteredRows = useMemo(
+    () => filterAuditRowsByMatch(rows, selectedMatchId),
+    [rows, selectedMatchId]
+  );
 
-        if (!match) return;
+  const paginatedRows = useMemo(
+    () => paginateRows(filteredRows, currentPage, AUDIT_PAGE_SIZE),
+    [currentPage, filteredRows]
+  );
 
-        collectedRows.push({
-          key: `${matchId}-${player.id}`,
-          match,
-          player,
-          prediction,
-        });
-      });
-    });
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedMatchId, rows.length]);
 
-    return collectedRows.sort((a, b) => {
-      if (a.match.id !== b.match.id) {
-        return a.match.id.localeCompare(b.match.id, undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        });
-      }
-
-      return a.player.name.localeCompare(b.player.name);
-    });
-  }, [matches, players]);
-
-  const filteredRows =
-    selectedMatchId === 'all'
-      ? rows
-      : rows.filter((row) => row.match.id === selectedMatchId);
+  const matchIdsWithPredictions = useMemo(
+    () => new Set(rows.map((row) => row.match.id)),
+    [rows]
+  );
 
   const matchesWithPredictions = matches.filter((match) =>
-    rows.some((row) => row.match.id === match.id)
+    matchIdsWithPredictions.has(match.id)
   );
 
   return (
@@ -163,6 +159,45 @@ export function PredictionsAuditTable({
         </div>
       ) : (
         <>
+          <div className="border-b border-slate-100 bg-white px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-[11px] font-semibold text-slate-500">
+              Mostrando {paginatedRows.startRow}-{paginatedRows.endRow} de{' '}
+              {paginatedRows.totalRows} palpites
+            </span>
+
+            {paginatedRows.totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={paginatedRows.page === 1}
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Pagina anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <span className="text-[11px] font-mono font-bold text-slate-500 min-w-[86px] text-center">
+                  {paginatedRows.page} / {paginatedRows.totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCurrentPage((page) =>
+                      Math.min(paginatedRows.totalPages, page + 1)
+                    )
+                  }
+                  disabled={paginatedRows.page === paginatedRows.totalPages}
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Proxima pagina"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full min-w-[860px] text-left border-collapse">
               <thead>
@@ -177,7 +212,7 @@ export function PredictionsAuditTable({
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {filteredRows.map((row) => (
+                {paginatedRows.rows.map((row) => (
                   <tr key={row.key} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-4 px-5">
                       <div className="font-semibold text-sm text-slate-800">
@@ -231,7 +266,7 @@ export function PredictionsAuditTable({
           </div>
 
           <div className="md:hidden divide-y divide-slate-100">
-            {filteredRows.map((row) => (
+            {paginatedRows.rows.map((row) => (
               <article key={row.key} className="p-4 bg-white">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">

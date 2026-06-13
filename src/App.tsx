@@ -545,19 +545,28 @@ export default function App() {
     }
   };
 
-  const leaderboardPlayers = computeLeaderboard(players, matches);
-  const paidPlayers = getPaidParticipants(players);
+  const leaderboardPlayers = useMemo(
+    () => computeLeaderboard(players, matches),
+    [matches, players]
+  );
+  const paidPlayers = useMemo(() => getPaidParticipants(players), [players]);
   const paidParticipantsCount = paidPlayers.length;
-  const { totalPrizePool, firstPrize, secondPrize } =
-    calculatePrizes(paidParticipantsCount);
+  const { totalPrizePool, firstPrize, secondPrize } = useMemo(
+    () => calculatePrizes(paidParticipantsCount),
+    [paidParticipantsCount]
+  );
 
-  const currentRankingPlayer = currentUser
-    ? leaderboardPlayers.find(
-        (player) =>
-          player.id === currentUser.uid ||
-          Boolean(currentUser.email && player.email === currentUser.email)
-      )
-    : null;
+  const currentRankingPlayer = useMemo(
+    () =>
+      currentUser
+        ? leaderboardPlayers.find(
+            (player) =>
+              player.id === currentUser.uid ||
+              Boolean(currentUser.email && player.email === currentUser.email)
+          )
+        : null,
+    [currentUser, leaderboardPlayers]
+  );
 
   const matchesUserPlayer = userPlayer || anonymousViewer;
   const canEditPredictions = Boolean(
