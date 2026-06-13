@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "match": {
+      "title": "Match",
+      "description": "Representação de uma partida da Copa do Mundo",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "teamA": { "type": "string" },
+        "teamB": { "type": "string" },
+        "flagA": { "type": "string" },
+        "flagB": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "status": { "type": "string", "enum": ["scheduled", "finished"] },
+        "scoreA": { "type": "integer" },
+        "scoreB": { "type": "integer" },
+        "group": { "type": "string" }
+      },
+      "required": ["id", "teamA", "teamB", "flagA", "flagB", "date", "time", "status", "group"]
+    },
+    "player": {
+      "title": "Player",
+      "description": "Participante do bolão, com dados cadastrais e palpites",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "predictions": { "type": "object" },
+        "points": { "type": "integer" },
+        "exactHits": { "type": "integer" },
+        "partialHits": { "type": "integer" },
+        "errorHits": { "type": "integer" },
+        "isAdmin": { "type": "boolean" },
+        "email": { "type": "string" }
+      },
+      "required": ["id", "name", "avatar", "predictions", "points", "exactHits", "partialHits", "errorHits"]
+    }
+  },
+  "firestore": {
+    "/matches/{matchId}": {
+      "schema": "match",
+      "description": "Coleção com os dados de jogos oficiais"
+    },
+    "/players/{playerId}": {
+      "schema": "player",
+      "description": "Coleção com os palpites e pontuações de cada jogador"
+    }
+  }
+}

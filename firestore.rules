@@ -1,0 +1,268 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verifiedUser() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function adminEmails() {
+      return [
+        "nahanmiguelbarbosa@gmail.com"
+      ];
+    }
+
+    function isAdmin() {
+      return verifiedUser()
+        && request.auth.token.email in adminEmails();
+    }
+
+    function isOwner(playerId) {
+      return verifiedUser() && request.auth.uid == playerId;
+    }
+
+    function isLegacyEmailOwner() {
+      return verifiedUser()
+        && resource.data.email is string
+        && resource.data.email == request.auth.token.email;
+    }
+
+    function isValidId(id) {
+      return id is string
+        && id.size() > 0
+        && id.size() <= 128
+        && id.matches("^[a-zA-Z0-9_\\-]+$");
+    }
+
+    function matchFieldsAreValid(data) {
+      return data.keys().hasOnly([
+        "id",
+        "teamA",
+        "teamB",
+        "flagA",
+        "flagB",
+        "date",
+        "time",
+        "startsAt",
+        "startsAtMs",
+        "status",
+        "scoreA",
+        "scoreB",
+        "group",
+        "venue",
+        "city"
+      ]);
+    }
+
+    function matchDataIsValid(data, matchId) {
+      return matchFieldsAreValid(data)
+        && data.id == matchId
+        && isValidId(matchId)
+        && data.teamA is string
+        && data.teamA.size() > 0
+        && data.teamA.size() <= 100
+        && data.teamB is string
+        && data.teamB.size() > 0
+        && data.teamB.size() <= 100
+        && data.flagA is string
+        && data.flagA.size() <= 10
+        && data.flagB is string
+        && data.flagB.size() <= 10
+        && data.date is string
+        && data.date.size() <= 50
+        && data.time is string
+        && data.time.size() <= 50
+        && data.startsAt is string
+        && data.startsAt.size() <= 40
+        && data.startsAtMs is number
+        && data.group is string
+        && data.group.size() <= 50
+        && (!data.keys().hasAny(["venue"]) || (data.venue is string && data.venue.size() <= 120))
+        && (!data.keys().hasAny(["city"]) || (data.city is string && data.city.size() <= 120))
+        && data.status in ["scheduled", "finished"]
+        && (!data.keys().hasAny(["scoreA"]) || data.scoreA is number)
+        && (!data.keys().hasAny(["scoreB"]) || data.scoreB is number)
+        && (
+          data.status == "scheduled"
+          || (
+            data.keys().hasAll(["scoreA", "scoreB"])
+            && data.scoreA is number
+            && data.scoreB is number
+          )
+        );
+    }
+
+    function playerFieldsAreValid(data) {
+      return data.keys().hasOnly([
+        "id",
+        "name",
+        "avatar",
+        "predictions",
+        "points",
+        "exactHits",
+        "partialHits",
+        "errorHits",
+        "manualPointsAdjustment",
+        "manualPointsAdjustmentUpdatedAt",
+        "lastPredictionMatchId",
+        "isAdmin",
+        "email"
+      ]);
+    }
+
+    function playerDataIsValid(data, playerId) {
+      return playerFieldsAreValid(data)
+        && data.id == playerId
+        && isValidId(playerId)
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 128
+        && data.avatar is string
+        && data.avatar.size() <= 10
+        && data.predictions is map
+        && data.predictions.keys().size() <= 128
+        && data.points is number
+        && data.exactHits is number
+        && data.partialHits is number
+        && data.errorHits is number
+        && data.get("manualPointsAdjustment", 0) is number
+        && data.get("manualPointsAdjustmentUpdatedAt", "") is string
+        && data.get("manualPointsAdjustmentUpdatedAt", "").size() <= 40
+        && data.get("lastPredictionMatchId", "") is string
+        && data.get("lastPredictionMatchId", "").size() <= 128
+        && data.isAdmin is bool
+        && data.email is string
+        && data.email.size() <= 254;
+    }
+
+    function predictionDataIsValid(prediction) {
+      return prediction is map
+        && prediction.keys().hasOnly([
+          "scoreA",
+          "scoreB",
+          "createdAt",
+          "updatedAt"
+        ])
+        && prediction.scoreA is number
+        && prediction.scoreA >= 0
+        && prediction.scoreA <= 99
+        && prediction.scoreB is number
+        && prediction.scoreB >= 0
+        && prediction.scoreB <= 99
+        && (!prediction.keys().hasAny(["createdAt"]) || (prediction.createdAt is string && prediction.createdAt.size() <= 40))
+        && (!prediction.keys().hasAny(["updatedAt"]) || (prediction.updatedAt is string && prediction.updatedAt.size() <= 40));
+    }
+
+    function matchIsOpenForPrediction(matchId) {
+      return exists(/databases/$(database)/documents/matches/$(matchId))
+        && get(/databases/$(database)/documents/matches/$(matchId)).data.status == "scheduled"
+        && get(/databases/$(database)/documents/matches/$(matchId)).data.startsAtMs is number
+        && request.time.toMillis() < get(/databases/$(database)/documents/matches/$(matchId)).data.startsAtMs;
+    }
+
+    function predictionUpdateIsSafe() {
+      return request.resource.data.lastPredictionMatchId is string
+        && isValidId(request.resource.data.lastPredictionMatchId)
+        && request.resource.data.predictions.diff(resource.data.predictions).affectedKeys().hasOnly([
+          request.resource.data.lastPredictionMatchId
+        ])
+        && predictionDataIsValid(request.resource.data.predictions[request.resource.data.lastPredictionMatchId])
+        && matchIsOpenForPrediction(request.resource.data.lastPredictionMatchId);
+    }
+
+    function ownerChangedFieldsAreSafe() {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+
+      return changedKeys.hasOnly([
+          "name",
+          "avatar",
+          "predictions",
+          "lastPredictionMatchId"
+        ])
+        && (
+          !changedKeys.hasAny(["predictions"])
+          || predictionUpdateIsSafe()
+        )
+        && (
+          changedKeys.hasAny(["predictions"])
+          || !changedKeys.hasAny(["lastPredictionMatchId"])
+        );
+    }
+
+    function ownerCreatePredictionsAreSafe() {
+      let matchId = request.resource.data.get("lastPredictionMatchId", "");
+
+      return (
+          request.resource.data.predictions.keys().size() == 0
+          && matchId == ""
+        )
+        || (
+          isValidId(matchId)
+          && request.resource.data.predictions.keys().hasOnly([matchId])
+          && predictionDataIsValid(request.resource.data.predictions[matchId])
+          && matchIsOpenForPrediction(matchId)
+        );
+    }
+
+    function ownerCreateIsSafe(playerId) {
+      return isOwner(playerId)
+        && playerDataIsValid(request.resource.data, playerId)
+        && request.resource.data.email == ""
+        && request.resource.data.isAdmin == false
+        && request.resource.data.points == 0
+        && request.resource.data.exactHits == 0
+        && request.resource.data.partialHits == 0
+        && request.resource.data.errorHits == 0
+        && request.resource.data.get("manualPointsAdjustment", 0) == 0
+        && request.resource.data.get("manualPointsAdjustmentUpdatedAt", "") == ""
+        && ownerCreatePredictionsAreSafe();
+    }
+
+    function protectedPlayerFieldsUnchanged() {
+      return request.resource.data.id == resource.data.id
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.isAdmin == resource.data.isAdmin
+        && request.resource.data.points == resource.data.points
+        && request.resource.data.exactHits == resource.data.exactHits
+        && request.resource.data.partialHits == resource.data.partialHits
+        && request.resource.data.errorHits == resource.data.errorHits
+        && request.resource.data.get("manualPointsAdjustment", 0) == resource.data.get("manualPointsAdjustment", 0)
+        && request.resource.data.get("manualPointsAdjustmentUpdatedAt", "") == resource.data.get("manualPointsAdjustmentUpdatedAt", "");
+    }
+
+    function ownerUpdateIsSafe(playerId) {
+      return (isOwner(playerId) || isLegacyEmailOwner())
+        && playerDataIsValid(request.resource.data, playerId)
+        && protectedPlayerFieldsUnchanged()
+        && ownerChangedFieldsAreSafe();
+    }
+
+    match /matches/{matchId} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && matchDataIsValid(request.resource.data, matchId);
+      allow delete: if isAdmin();
+    }
+
+    match /players/{playerId} {
+      allow read: if true;
+      allow create: if (
+        isAdmin()
+        && playerDataIsValid(request.resource.data, playerId)
+      ) || ownerCreateIsSafe(playerId);
+      allow update: if (
+        isAdmin()
+        && playerDataIsValid(request.resource.data, playerId)
+      ) || ownerUpdateIsSafe(playerId);
+      allow delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
