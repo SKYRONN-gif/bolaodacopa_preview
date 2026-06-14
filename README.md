@@ -42,9 +42,10 @@ deve ser a mesma lista da funcao `adminEmails()` nas rules.
 
 Importante: `VITE_ADMIN_EMAILS` libera somente a aba admin no front. Quem libera
 escrita no banco e o arquivo `firestore.rules`. Depois de adicionar um admin na
-Vercel, adicione o mesmo e-mail em `adminEmails()` e rode `npm run deploy:rules`,
-ou marque o documento `players/{uid}` dessa pessoa com `isAdmin: true` e
-`email: "email-da-pessoa"` depois que as rules atualizadas estiverem publicadas.
+Vercel, adicione o mesmo e-mail em `adminEmails()` e rode `npm run deploy:rules`.
+Outra opcao e pedir para a pessoa entrar uma vez com Google e, no Firestore,
+marcar o documento `players/{uid-do-google}` dela com `isAdmin: true`. O campo
+`email` desse documento deve ser o mesmo email da Conta Google, sem espacos.
 
 O app nao usa fallback de Firebase em producao. Se alguma variavel obrigatoria
 faltar na Vercel, o app acusa erro em vez de conectar em outro projeto.
@@ -62,7 +63,9 @@ para os participantes.
 ## Manutencao
 
 - Para adicionar outro admin, coloque o e-mail em `VITE_ADMIN_EMAILS`, separado
-  por virgula, e repita o mesmo e-mail em `firestore.rules`.
+  por virgula, e repita o mesmo e-mail em `firestore.rules`. Se preferir nao
+  publicar rules a cada admin novo, peca para a pessoa entrar uma vez e marque
+  `players/{uid-do-google}.isAdmin` como `true` no Firestore.
 - Ao cadastrar jogos manualmente no Firestore, os campos que controlam o site
   sao `date`, `time`, `startsAt` e `startsAtMs`. `createdAt` e `updatedAt` em
   jogos nao mudam a data exibida nem a trava de palpites.

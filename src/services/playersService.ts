@@ -77,6 +77,15 @@ export async function savePlayerProfile(
   });
 }
 
+export async function savePlayerEmail(
+  playerId: string,
+  email: string
+): Promise<void> {
+  await updateDoc(doc(db, 'players', playerId), {
+    email,
+  });
+}
+
 export async function savePlayerManualAdjustment(
   playerId: string,
   manualPointsAdjustment: number

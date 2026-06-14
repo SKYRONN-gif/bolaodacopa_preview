@@ -37,6 +37,9 @@ cadastrados pelo Painel ADM ja recebem esse campo automaticamente.
 ## Colecao `players`
 
 Cada participante fica em `players/{uid}` ou `players/manual-...`.
+Para permissao de admin via perfil, use obrigatoriamente `players/{uid}` com o
+UID da Conta Google. Documento `manual-...` pode aparecer no ranking, mas nao
+libera escrita admin nas rules.
 
 Campos principais:
 
@@ -80,6 +83,8 @@ Para trazer pontos antigos que nao existem mais como palpite/jogo, use
 4. Entre sem admin e confirme que nao aparece `Painel ADM`.
 5. Entre na aba de jogos e confirme que nao aparece lista de outros
    participantes embaixo dos cards.
+6. Para admin por perfil, confirme que o documento e `players/{uid-do-google}`,
+   com `email` igual ao email logado e `isAdmin: true`.
 
 Se o app mostrar "Modo local ativo", ele nao esta conectado ao Firebase certo.
 Confira as variaveis `VITE_FIREBASE_*` na Vercel e se `firestore.rules` foi

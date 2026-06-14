@@ -33,6 +33,7 @@ import {
 } from './services/matchesService';
 import {
   savePlayer,
+  savePlayerEmail,
   savePlayerManualAdjustment,
   savePlayerPrediction,
   savePlayerProfile,
@@ -42,6 +43,10 @@ import { AppTab, Match, Player, Prediction } from './types';
 
 const CAN_USE_LOCAL_FALLBACK =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_LOCAL_FALLBACK === 'true';
+
+function getUserEmail(user: FirebaseUser | null) {
+  return user?.email?.trim() || '';
+}
 
 function createPlayerFromFirebaseUser(user: FirebaseUser): Player {
   return {
@@ -56,9 +61,15 @@ function createPlayerFromFirebaseUser(user: FirebaseUser): Player {
     manualPointsAdjustment: 0,
     manualPointsAdjustmentUpdatedAt: '',
     lastPredictionMatchId: '',
-    email: '',
-    isAdmin: isAdminEmail(user.email),
+    email: getUserEmail(user),
+    isAdmin: false,
   };
+}
+
+function emailsMatch(first?: string | null, second?: string | null) {
+  if (!first || !second) return false;
+
+  return first.trim().toLowerCase() === second.trim().toLowerCase();
 }
 
 function upsertPlayer(players: Player[], nextPlayer: Player): Player[] {
@@ -252,17 +263,29 @@ export default function App() {
     const existingPlayer = players.find(
       (player) =>
         player.id === currentUser.uid ||
-        Boolean(currentUser.email && player.email === currentUser.email)
+        emailsMatch(player.email, currentUser.email)
     );
 
     if (existingPlayer) {
+      const userEmail = getUserEmail(currentUser);
       const normalizedPlayer: Player = {
         ...existingPlayer,
-        email: existingPlayer.email || '',
-        isAdmin: existingPlayer.isAdmin || isAdminEmail(currentUser.email),
+        email: existingPlayer.email || userEmail,
+        isAdmin: existingPlayer.isAdmin || false,
       };
 
       setUserPlayer(normalizedPlayer);
+
+      if (
+        !existingPlayer.email &&
+        userEmail &&
+        existingPlayer.id === currentUser.uid
+      ) {
+        savePlayerEmail(existingPlayer.id, userEmail).catch((error) => {
+          console.warn('Erro ao vincular email ao perfil no Firestore:', error);
+        });
+      }
+
       return;
     }
 
@@ -315,8 +338,8 @@ export default function App() {
       ...userPlayer,
       name: trimmedName,
       avatar,
-      email: userPlayer.email || '',
-      isAdmin: userPlayer.isAdmin || isAdminEmail(currentUser.email),
+      email: userPlayer.email || getUserEmail(currentUser),
+      isAdmin: userPlayer.isAdmin || false,
     };
 
     try {
@@ -393,8 +416,8 @@ export default function App() {
         [matchId]: prediction,
       },
       lastPredictionMatchId: matchId,
-      email: userPlayer.email || '',
-      isAdmin: isAdminEmail(currentUser.email),
+      email: userPlayer.email || getUserEmail(currentUser),
+      isAdmin: userPlayer.isAdmin || false,
     };
 
     try {
@@ -574,7 +597,7 @@ export default function App() {
         ? leaderboardPlayers.find(
             (player) =>
               player.id === currentUser.uid ||
-              Boolean(currentUser.email && player.email === currentUser.email)
+              emailsMatch(player.email, currentUser.email)
           )
         : null,
     [currentUser, leaderboardPlayers]

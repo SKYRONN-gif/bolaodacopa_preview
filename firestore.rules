@@ -7,7 +7,10 @@ service cloud.firestore {
     }
 
     function verifiedUser() {
-      return signedIn() && request.auth.token.email_verified == true;
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email is string
+        && request.auth.token.email.size() <= 254;
     }
 
     function adminEmails() {
@@ -186,15 +189,25 @@ service cloud.firestore {
         && matchIsOpenForPrediction(request.resource.data.lastPredictionMatchId);
     }
 
+    function ownerEmailUpdateIsSafe() {
+      return resource.data.email == ""
+        && request.resource.data.email == request.auth.token.email;
+    }
+
     function ownerChangedFieldsAreSafe() {
       let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
 
       return changedKeys.hasOnly([
           "name",
           "avatar",
+          "email",
           "predictions",
           "lastPredictionMatchId"
         ])
+        && (
+          !changedKeys.hasAny(["email"])
+          || ownerEmailUpdateIsSafe()
+        )
         && (
           !changedKeys.hasAny(["predictions"])
           || predictionUpdateIsSafe()
@@ -223,7 +236,7 @@ service cloud.firestore {
     function ownerCreateIsSafe(playerId) {
       return isOwner(playerId)
         && playerDataIsValid(request.resource.data, playerId)
-        && request.resource.data.email == ""
+        && request.resource.data.email in ["", request.auth.token.email]
         && request.resource.data.isAdmin == false
         && request.resource.data.points == 0
         && request.resource.data.exactHits == 0
@@ -236,7 +249,10 @@ service cloud.firestore {
 
     function protectedPlayerFieldsUnchanged() {
       return request.resource.data.id == resource.data.id
-        && request.resource.data.email == resource.data.email
+        && (
+          request.resource.data.email == resource.data.email
+          || ownerEmailUpdateIsSafe()
+        )
         && request.resource.data.isAdmin == resource.data.isAdmin
         && request.resource.data.points == resource.data.points
         && request.resource.data.exactHits == resource.data.exactHits
