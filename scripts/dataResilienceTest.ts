@@ -81,6 +81,14 @@ function normalizePlayers(rawPlayers: Array<[string, unknown]>) {
     .filter((player): player is Player => Boolean(player));
 }
 
+const manualStartsAt = new Date('2026-06-13T18:00:00.123Z');
+const manualPredictionUpdatedAt = new Date('2026-06-13T19:15:00.000Z');
+const manualAdjustmentUpdatedAt = new Date('2026-06-14T10:30:00.000Z');
+const firestoreTimestampLike = {
+  seconds: Math.floor(manualStartsAt.getTime() / 1000),
+  nanoseconds: manualStartsAt.getUTCMilliseconds() * 1_000_000,
+};
+
 const manualMatches = normalizeMatches([
   [
     'm1',
@@ -92,7 +100,7 @@ const manualMatches = normalizeMatches([
       flagB: 'AR',
       date: null,
       time: undefined,
-      startsAt: 'not-a-date',
+      startsAt: firestoreTimestampLike,
       startsAtMs: 'not-a-number',
       status: 'finished',
       scoreA: '2',
@@ -113,7 +121,12 @@ const manualPlayers = normalizePlayers([
       name: '  '.padEnd(200, 'N'),
       avatar: 42,
       predictions: {
-        m1: { scoreA: '2', scoreB: '1', createdAt: 'x'.repeat(80) },
+        m1: {
+          scoreA: '2',
+          scoreB: '1',
+          createdAt: firestoreTimestampLike,
+          updatedAt: { toDate: () => manualPredictionUpdatedAt },
+        },
         m2: { scoreA: '0', scoreB: 1 },
         brokenScore: { scoreA: 'abc', scoreB: 1 },
         missingMatch: { scoreA: 9, scoreB: 9 },
@@ -123,7 +136,10 @@ const manualPlayers = normalizePlayers([
       partialHits: null,
       errorHits: undefined,
       manualPointsAdjustment: '3',
-      manualPointsAdjustmentUpdatedAt: '2026-01-01T00:00:00.000Z',
+      manualPointsAdjustmentUpdatedAt: {
+        _seconds: Math.floor(manualAdjustmentUpdatedAt.getTime() / 1000),
+        _nanoseconds: 0,
+      },
       lastPredictionMatchId: 'm1',
       isAdmin: 'true',
       email: 123,
@@ -136,12 +152,26 @@ const manualPlayers = normalizePlayers([
 assert.equal(manualMatches.length, 2);
 assert.equal(manualMatches[0].id, 'm1');
 assert.equal(manualMatches[0].teamA, 'Time A');
+assert.equal(manualMatches[0].startsAt, manualStartsAt.toISOString());
+assert.equal(manualMatches[0].startsAtMs, manualStartsAt.getTime());
 assert.equal(manualMatches[0].scoreA, 2);
 assert.equal(manualPlayers.length, 2);
 assert.equal(manualPlayers[0].id, 'player-1');
 assert.equal(manualPlayers[0].name.length, 128);
 assert.equal(manualPlayers[0].isAdmin, false);
 assert.equal(Object.keys(manualPlayers[0].predictions).length, 3);
+assert.equal(
+  manualPlayers[0].predictions.m1.createdAt,
+  manualStartsAt.toISOString()
+);
+assert.equal(
+  manualPlayers[0].predictions.m1.updatedAt,
+  manualPredictionUpdatedAt.toISOString()
+);
+assert.equal(
+  manualPlayers[0].manualPointsAdjustmentUpdatedAt,
+  manualAdjustmentUpdatedAt.toISOString()
+);
 
 const manualLeaderboard = computeLeaderboard(manualPlayers, manualMatches);
 const manualAuditRows = buildPredictionAuditRows(manualMatches, manualPlayers);

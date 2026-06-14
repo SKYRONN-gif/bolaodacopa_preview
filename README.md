@@ -40,6 +40,12 @@ Configure as variaveis `VITE_FIREBASE_*` na Vercel e publique as regras em
 `firestore.rules` no Firebase. A lista de admins do front (`VITE_ADMIN_EMAILS`)
 deve ser a mesma lista da funcao `adminEmails()` nas rules.
 
+Importante: `VITE_ADMIN_EMAILS` libera somente a aba admin no front. Quem libera
+escrita no banco e o arquivo `firestore.rules`. Depois de adicionar um admin na
+Vercel, adicione o mesmo e-mail em `adminEmails()` e rode `npm run deploy:rules`,
+ou marque o documento `players/{uid}` dessa pessoa com `isAdmin: true` e
+`email: "email-da-pessoa"` depois que as rules atualizadas estiverem publicadas.
+
 O app nao usa fallback de Firebase em producao. Se alguma variavel obrigatoria
 faltar na Vercel, o app acusa erro em vez de conectar em outro projeto.
 
@@ -57,6 +63,13 @@ para os participantes.
 
 - Para adicionar outro admin, coloque o e-mail em `VITE_ADMIN_EMAILS`, separado
   por virgula, e repita o mesmo e-mail em `firestore.rules`.
+- Ao cadastrar jogos manualmente no Firestore, os campos que controlam o site
+  sao `date`, `time`, `startsAt` e `startsAtMs`. `createdAt` e `updatedAt` em
+  jogos nao mudam a data exibida nem a trava de palpites.
+- Ao cadastrar palpites manualmente, use `players/{playerId}.predictions.{matchId}`
+  com `scoreA`, `scoreB`, `createdAt` e `updatedAt`. As datas podem ser ISO
+  string, `Date`, timestamp em milissegundos/segundos ou Timestamp nativo do
+  Firestore.
 - Para alterar os avatares disponiveis no cadastro manual, edite
   `src/config/avatars.ts`.
 - Para cadastrar proximos jogos sem mexer em codigo, entre como admin e use

@@ -109,6 +109,18 @@ function upsertMatch(matches: Match[], nextMatch: Match) {
   );
 }
 
+function isAdminProfileForUser(
+  player: Player | null,
+  user: FirebaseUser | null
+) {
+  return Boolean(
+    player?.isAdmin &&
+      player.email &&
+      user?.email &&
+      player.email.trim().toLowerCase() === user.email.trim().toLowerCase()
+  );
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('home');
   const [matches, setMatches] = useState<Match[]>([]);
@@ -572,7 +584,9 @@ export default function App() {
   const canEditPredictions = Boolean(
     currentUser && userPlayer && hasPlayersSnapshotResolved
   );
-  const isCurrentUserAdmin = isAdminEmail(currentUser?.email);
+  const isCurrentUserAdmin =
+    isAdminEmail(currentUser?.email) ||
+    isAdminProfileForUser(userPlayer, currentUser);
 
   if (isLoading && matches.length === 0 && players.length === 0) {
     return (

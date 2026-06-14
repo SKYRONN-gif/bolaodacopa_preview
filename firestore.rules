@@ -16,9 +16,20 @@ service cloud.firestore {
       ];
     }
 
+    function hasAdminProfile() {
+      return verifiedUser()
+        && exists(/databases/$(database)/documents/players/$(request.auth.uid))
+        && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.isAdmin == true
+        && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.email is string
+        && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.email == request.auth.token.email;
+    }
+
     function isAdmin() {
       return verifiedUser()
-        && request.auth.token.email in adminEmails();
+        && (
+          request.auth.token.email in adminEmails()
+          || hasAdminProfile()
+        );
     }
 
     function isOwner(playerId) {

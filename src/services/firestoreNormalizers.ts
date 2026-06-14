@@ -25,6 +25,95 @@ function cleanOptionalString(value: unknown, maxLength: number) {
   return trimmed.slice(0, maxLength);
 }
 
+function getRecordNumber(value: Record<string, unknown>, key: string) {
+  const rawValue = value[key];
+
+  if (typeof rawValue === 'number') return rawValue;
+
+  if (typeof rawValue === 'string') {
+    const parsedValue = Number(rawValue);
+
+    return Number.isFinite(parsedValue) ? parsedValue : undefined;
+  }
+
+  return undefined;
+}
+
+function epochToDate(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return null;
+
+  const milliseconds =
+    Math.abs(value) < 1_000_000_000_000 ? value * 1000 : value;
+  const date = new Date(milliseconds);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseDateTimeValue(value: unknown): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === 'number') {
+    return epochToDate(value);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (!trimmed) return null;
+
+    const numericValue = Number(trimmed);
+
+    if (Number.isFinite(numericValue)) {
+      return epochToDate(numericValue);
+    }
+
+    const date = new Date(trimmed);
+
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (!isRecord(value)) return null;
+
+  if (typeof value.toDate === 'function') {
+    try {
+      const date = value.toDate();
+
+      if (date instanceof Date && !Number.isNaN(date.getTime())) {
+        return date;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  const seconds =
+    getRecordNumber(value, 'seconds') ?? getRecordNumber(value, '_seconds');
+
+  if (seconds === undefined) return null;
+
+  const nanoseconds =
+    getRecordNumber(value, 'nanoseconds') ??
+    getRecordNumber(value, '_nanoseconds') ??
+    0;
+  const date = new Date(seconds * 1000 + Math.floor(nanoseconds / 1_000_000));
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function cleanDateTimeString(value: unknown) {
+  const date = parseDateTimeValue(value);
+
+  if (date) return date.toISOString();
+
+  if (typeof value !== 'string') return undefined;
+
+  const trimmed = value.trim();
+
+  return trimmed ? trimmed.slice(0, 40) : undefined;
+}
+
 function cleanNumber(value: unknown, fallback = 0) {
   const parsedValue =
     typeof value === 'number'
@@ -42,16 +131,62 @@ function cleanScore(value: unknown, fallback = 0) {
   return Math.min(MAX_SCORE, Math.max(0, score));
 }
 
-function cleanTimestampMs(value: unknown, startsAt: string) {
+function parseBrazilianSchedule(date: string, time: string) {
+  const dateMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(date.trim());
+  const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
+
+  if (!dateMatch || !timeMatch) return null;
+
+  const [, rawDay, rawMonth, rawYear] = dateMatch;
+  const [, rawHour, rawMinute] = timeMatch;
+  const day = Number(rawDay);
+  const month = Number(rawMonth);
+  const year = Number(rawYear);
+  const hour = Number(rawHour);
+  const minute = Number(rawMinute);
+
+  if (
+    !day ||
+    !month ||
+    !year ||
+    month > 12 ||
+    day > 31 ||
+    hour > 23 ||
+    minute > 59
+  ) {
+    return null;
+  }
+
+  const pad = (numberValue: number) => String(numberValue).padStart(2, '0');
+  const parsedDate = new Date(
+    `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:00-03:00`
+  );
+
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+}
+
+function cleanTimestampMs(value: unknown, startsAt: string, date: string, time: string) {
+  const parsedValue = parseDateTimeValue(value);
+
+  if (parsedValue) {
+    return parsedValue.getTime();
+  }
+
   const timestamp = cleanNumber(value, Number.NaN);
 
   if (Number.isFinite(timestamp) && timestamp > 0) {
-    return timestamp;
+    return epochToDate(timestamp)?.getTime() ?? timestamp;
   }
 
-  const parsedStartsAt = new Date(startsAt).getTime();
+  const parsedStartsAt = parseDateTimeValue(startsAt)?.getTime();
 
-  return Number.isFinite(parsedStartsAt) ? parsedStartsAt : 0;
+  if (parsedStartsAt && Number.isFinite(parsedStartsAt)) {
+    return parsedStartsAt;
+  }
+
+  const parsedSchedule = parseBrazilianSchedule(date, time)?.getTime();
+
+  return parsedSchedule && Number.isFinite(parsedSchedule) ? parsedSchedule : 0;
 }
 
 function cleanPrediction(value: unknown): Prediction | null {
@@ -69,13 +204,11 @@ function cleanPrediction(value: unknown): Prediction | null {
     scoreB,
   };
 
-  if (typeof value.createdAt === 'string') {
-    prediction.createdAt = value.createdAt.slice(0, 40);
-  }
+  const createdAt = cleanDateTimeString(value.createdAt);
+  const updatedAt = cleanDateTimeString(value.updatedAt);
 
-  if (typeof value.updatedAt === 'string') {
-    prediction.updatedAt = value.updatedAt.slice(0, 40);
-  }
+  if (createdAt) prediction.createdAt = createdAt;
+  if (updatedAt) prediction.updatedAt = updatedAt;
 
   return prediction;
 }
@@ -108,7 +241,12 @@ export function normalizeMatchDocument(
 
   if (!id) return null;
 
-  const startsAt = cleanString(value.startsAt, '', 40);
+  const date = cleanString(value.date, 'Data indefinida', 50);
+  const time = cleanString(value.time, '--:--', 50);
+  const startsAt =
+    cleanDateTimeString(value.startsAt) ||
+    parseBrazilianSchedule(date, time)?.toISOString() ||
+    '';
   const status = value.status === 'finished' ? 'finished' : 'scheduled';
   const scoreA =
     value.scoreA === undefined && status !== 'finished'
@@ -125,10 +263,10 @@ export function normalizeMatchDocument(
     teamB: cleanString(value.teamB, 'Time B', 100),
     flagA: cleanString(value.flagA, '', 10),
     flagB: cleanString(value.flagB, '', 10),
-    date: cleanString(value.date, 'Data indefinida', 50),
-    time: cleanString(value.time, '--:--', 50),
+    date,
+    time,
     startsAt,
-    startsAtMs: cleanTimestampMs(value.startsAtMs, startsAt),
+    startsAtMs: cleanTimestampMs(value.startsAtMs, startsAt, date, time),
     status,
     scoreA,
     scoreB,
@@ -159,9 +297,7 @@ export function normalizePlayerDocument(
     errorHits: cleanNumber(value.errorHits, 0),
     manualPointsAdjustment: cleanNumber(value.manualPointsAdjustment, 0),
     manualPointsAdjustmentUpdatedAt:
-      typeof value.manualPointsAdjustmentUpdatedAt === 'string'
-        ? value.manualPointsAdjustmentUpdatedAt.slice(0, 40)
-        : '',
+      cleanDateTimeString(value.manualPointsAdjustmentUpdatedAt) || '',
     lastPredictionMatchId: cleanString(value.lastPredictionMatchId, '', 128),
     isAdmin: value.isAdmin === true,
     email: typeof value.email === 'string' ? value.email.slice(0, 254) : '',
