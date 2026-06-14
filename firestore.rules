@@ -12,8 +12,7 @@ service cloud.firestore {
 
     function adminEmails() {
       return [
-        "nahanmiguelbarbosa@gmail.com",
-        "bolaoadmin@gmail.com"
+        "nahanmiguelbarbosa@gmail.com"
       ];
     }
 
