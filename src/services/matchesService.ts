@@ -19,12 +19,22 @@ interface SubscribeToMatchesParams {
 
 const FIRESTORE_BATCH_WRITE_LIMIT = 450;
 
+function removeUndefinedFields<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined)
+  );
+}
+
+function toFirestoreMatch(match: Match) {
+  return removeUndefinedFields({ ...match });
+}
+
 async function writeMatchesInBatches(matches: Match[]): Promise<void> {
   let batch = writeBatch(db);
   let pendingWrites = 0;
 
   for (const match of matches) {
-    batch.set(doc(db, 'matches', match.id), match);
+    batch.set(doc(db, 'matches', match.id), toFirestoreMatch(match));
     pendingWrites++;
 
     if (pendingWrites >= FIRESTORE_BATCH_WRITE_LIMIT) {
@@ -76,7 +86,7 @@ export function subscribeToMatches({
 }
 
 export async function saveMatch(match: Match): Promise<void> {
-  await setDoc(doc(db, 'matches', match.id), match);
+  await setDoc(doc(db, 'matches', match.id), toFirestoreMatch(match));
 }
 
 export async function seedMatches(matches: Match[]): Promise<void> {
