@@ -281,7 +281,7 @@ service cloud.firestore {
       allow create: if (
         isAdmin()
         && playerDataIsValid(request.resource.data, playerId)
-      ) || ownerCreateIsSafe(playerId);
+      );
       allow update: if (
         isAdmin()
         && playerDataIsValid(request.resource.data, playerId)
