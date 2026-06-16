@@ -1,207 +1,188 @@
-type ApiRequest = {
-  method?: string;
-};
+const BASE_URL = "https://v3.football.api-sports.io";
 
-type ApiResponse = {
-  status: (code: number) => ApiResponse;
-  json: (body: unknown) => void;
-  setHeader: (name: string, value: string) => void;
-};
-
-type ApiFootballFixture = {
-  fixture: {
-    id: number;
-    date: string;
-    timestamp: number;
-    status: {
-      short: string;
-      long: string;
-    };
-    venue?: {
-      name?: string;
-      city?: string;
-    };
-  };
-  league: {
-    round?: string;
-  };
-  teams: {
-    home: {
-      name: string;
-      logo?: string;
-    };
-    away: {
-      name: string;
-      logo?: string;
-    };
-  };
-  goals: {
-    home: number | null;
-    away: number | null;
-  };
-};
-
-type ApiFootballResponse = {
-  response?: ApiFootballFixture[];
-  errors?: unknown;
-};
-
-type NormalizedWorldCupMatch = {
-  id: string;
-  externalFixtureId: number;
-  teamA: string;
-  teamB: string;
-  flagA: string;
-  flagB: string;
-  date: string;
-  time: string;
-  startsAt: string;
-  startsAtMs: number;
-  status: "scheduled" | "finished";
-  scoreA?: number;
-  scoreB?: number;
-  group: string;
-  venue?: string;
-  city?: string;
-  externalStatus: string;
-};
-
-const API_FOOTBALL_BASE_URL = "https://v3.football.api-sports.io";
-
-function formatDateBR(date: Date): string {
-  return new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
+function getParam(value: any): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
 }
 
-function formatTimeBR(date: Date): string {
-  return new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
+function normalizeStatus(short?: string) {
+  if (!short) return "scheduled";
 
-function normalizeStatus(apiStatus: string): "scheduled" | "finished" {
-  const finishedStatuses = ["FT", "AET", "PEN"];
-
-  if (finishedStatuses.includes(apiStatus)) {
-    return "finished";
-  }
+  if (["FT", "AET", "PEN"].includes(short)) return "finished";
+  if (["1H", "HT", "2H", "ET", "BT", "P", "LIVE", "INT"].includes(short)) return "live";
+  if (["PST", "CANC", "ABD", "SUSP"].includes(short)) return "cancelled";
 
   return "scheduled";
 }
 
-function normalizeFixture(fixture: ApiFootballFixture): NormalizedWorldCupMatch {
-  const startsAtDate = new Date(fixture.fixture.date);
+export default async function handler(req: any, res: any) {
+  const apiKey = process.env.API_FOOTBALL_KEY;
 
-  const status = normalizeStatus(fixture.fixture.status.short);
-
-  const match: NormalizedWorldCupMatch = {
-    id: `wc2026-${fixture.fixture.id}`,
-    externalFixtureId: fixture.fixture.id,
-
-    teamA: fixture.teams.home.name,
-    teamB: fixture.teams.away.name,
-
-    // Por enquanto usamos o logo da API como imagem/flag.
-    // Depois, se seu front espera emoji/código de país, a gente ajusta aqui.
-    flagA: fixture.teams.home.logo ?? "🏳️",
-    flagB: fixture.teams.away.logo ?? "🏳️",
-
-    date: formatDateBR(startsAtDate),
-    time: formatTimeBR(startsAtDate),
-
-    startsAt: startsAtDate.toISOString(),
-    startsAtMs: startsAtDate.getTime(),
-
-    status,
-
-    group: fixture.league.round ?? "Copa do Mundo 2026",
-
-    venue: fixture.fixture.venue?.name,
-    city: fixture.fixture.venue?.city,
-
-    externalStatus: fixture.fixture.status.short,
-  };
-
-  if (
-    status === "finished" &&
-    typeof fixture.goals.home === "number" &&
-    typeof fixture.goals.away === "number"
-  ) {
-    match.scoreA = fixture.goals.home;
-    match.scoreB = fixture.goals.away;
-  }
-
-  return match;
-}
-
-export default async function handler(req: ApiRequest, res: ApiResponse) {
-  res.setHeader("Access-Control-Allow-Methods", "GET");
-
-  if (req.method !== "GET") {
-    return res.status(405).json({
-      message: "Método não permitido. Use GET.",
+  if (!apiKey) {
+    return res.status(500).json({
+      message: "API_FOOTBALL_KEY não configurada no ambiente.",
+      availableEnvKeys: Object.keys(process.env).filter((key) =>
+        key.includes("API") || key.includes("FOOTBALL") || key.includes("VERCEL")
+      ),
     });
   }
 
-  const apiKey = process.env.API_FOOTBALL_KEY;
-
-if (!apiKey) {
-  return res.status(500).json({
-    message: "API_FOOTBALL_KEY não configurada no ambiente.",
-    availableEnvKeys: Object.keys(process.env).filter((key) =>
-      key.includes("API") || key.includes("FOOTBALL") || key.includes("VERCEL")
-    ),
-  });
-}
   try {
-    const url = new URL(`${API_FOOTBALL_BASE_URL}/fixtures`);
+    const mode = getParam(req.query.mode);
+    const debug = getParam(req.query.debug) === "1";
 
-    url.searchParams.set("league", "1");
-    url.searchParams.set("season", "2026");
-    url.searchParams.set("timezone", "America/Sao_Paulo");
+    const season = getParam(req.query.season) || "2026";
 
-    const response = await fetch(url.toString(), {
-      method: "GET",
+    /**
+     * MODO 1:
+     * Descobrir o ID correto da liga.
+     *
+     * Teste no navegador:
+     * /api/worldcup-fixtures?mode=leagues
+     */
+    if (mode === "leagues") {
+      const search = getParam(req.query.search) || "World Cup";
+
+      const url = `${BASE_URL}/leagues?search=${encodeURIComponent(
+        search
+      )}&season=${season}`;
+
+      const response = await fetch(url, {
+        headers: {
+          "x-apisports-key": apiKey,
+        },
+      });
+
+      const data = await response.json();
+
+      return res.status(200).json({
+        mode: "leagues",
+        search,
+        season,
+        apiStatus: response.status,
+        results: data.results,
+        errors: data.errors,
+        parameters: data.parameters,
+        leagues: Array.isArray(data.response)
+          ? data.response.map((item: any) => ({
+              id: item.league?.id,
+              name: item.league?.name,
+              type: item.league?.type,
+              country: item.country?.name,
+              logo: item.league?.logo,
+              seasons: item.seasons?.map((s: any) => s.year),
+            }))
+          : [],
+      });
+    }
+
+    /**
+     * MODO 2:
+     * Buscar jogos da Copa.
+     *
+     * Se o ID da liga for diferente de 1, teste assim:
+     * /api/worldcup-fixtures?debug=1&league=ID_CORRETO
+     */
+    const league = getParam(req.query.league) || "1";
+    const from = getParam(req.query.from) || "2026-06-11";
+    const to = getParam(req.query.to) || "2026-07-19";
+
+    const url = `${BASE_URL}/fixtures?league=${league}&season=${season}&from=${from}&to=${to}&timezone=America/Sao_Paulo`;
+
+    const response = await fetch(url, {
       headers: {
         "x-apisports-key": apiKey,
       },
     });
 
-    if (!response.ok) {
-      return res.status(response.status).json({
-        message: "Erro ao buscar jogos na API externa.",
-        status: response.status,
-      });
-    }
+    const data = await response.json();
 
-    const data = (await response.json()) as ApiFootballResponse;
-
-    if (!Array.isArray(data.response)) {
-      return res.status(502).json({
-        message: "Resposta inválida da API externa.",
+    if (debug) {
+      return res.status(200).json({
+        mode: "fixtures-debug",
+        apiStatus: response.status,
+        queryUsed: {
+          league,
+          season,
+          from,
+          to,
+          timezone: "America/Sao_Paulo",
+        },
+        results: data.results,
         errors: data.errors,
+        parameters: data.parameters,
+        paging: data.paging,
+        firstRawItems: Array.isArray(data.response)
+          ? data.response.slice(0, 3)
+          : [],
       });
     }
 
-    const matches = data.response.map(normalizeFixture);
+    const fixtures = Array.isArray(data.response) ? data.response : [];
+
+    const matches = fixtures.map((item: any) => {
+      const fixture = item.fixture;
+      const leagueData = item.league;
+      const teams = item.teams;
+      const goals = item.goals;
+
+      const dateObj = new Date(fixture.date);
+
+      return {
+        id: String(fixture.id),
+        apiFixtureId: fixture.id,
+
+        dateISO: fixture.date,
+        date: new Intl.DateTimeFormat("pt-BR", {
+          timeZone: "America/Sao_Paulo",
+        }).format(dateObj),
+        time: new Intl.DateTimeFormat("pt-BR", {
+          timeZone: "America/Sao_Paulo",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).format(dateObj),
+
+        group: leagueData?.round || "Copa do Mundo",
+
+        teamA: teams?.home?.name,
+        teamB: teams?.away?.name,
+
+        logoA: teams?.home?.logo,
+        logoB: teams?.away?.logo,
+
+        scoreA: goals?.home,
+        scoreB: goals?.away,
+
+        status: normalizeStatus(fixture?.status?.short),
+        statusShort: fixture?.status?.short,
+        statusLong: fixture?.status?.long,
+
+        venue: fixture?.venue?.name,
+        city: fixture?.venue?.city,
+      };
+    });
 
     return res.status(200).json({
       matches,
       total: matches.length,
       syncedAt: new Date().toISOString(),
+      queryUsed: {
+        league,
+        season,
+        from,
+        to,
+      },
+      apiInfo: {
+        results: data.results,
+        errors: data.errors,
+        parameters: data.parameters,
+      },
     });
-  } catch (error) {
-    console.error("Erro em /api/worldcup-fixtures:", error);
-
+  } catch (error: any) {
     return res.status(500).json({
-      message: "Erro interno ao buscar jogos da Copa.",
+      message: "Erro ao buscar jogos da API-Football.",
+      error: error?.message || String(error),
     });
   }
 }
