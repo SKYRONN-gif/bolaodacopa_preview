@@ -173,14 +173,17 @@ async function fetchFromEspn() {
     throw new Error("Formato inesperado da ESPN: events não encontrado.");
   }
 
-  const matches = data.events.map(mapEspnEvent).filter(Boolean);
+const matches = data.events.map(mapEspnEvent).filter(Boolean);
 
-  return {
-    source: "espn",
-    matches,
-    rawCount: data.events.length,
-  };
+if (matches.length === 0) {
+  throw new Error("ESPN respondeu sem partidas. Acionando fallback OpenFootball.");
 }
+
+return {
+  source: "espn",
+  matches,
+  rawCount: data.events.length,
+};
 
 async function fetchFromOpenFootball() {
   const response = await fetch(OPENFOOTBALL_URL, {
@@ -200,14 +203,17 @@ async function fetchFromOpenFootball() {
     throw new Error("Formato inesperado do OpenFootball: matches não encontrado.");
   }
 
-  const matches = data.matches.map(mapOpenFootballMatch);
+const matches = data.matches.map(mapOpenFootballMatch);
 
-  return {
-    source: "openfootball",
-    matches,
-    rawCount: data.matches.length,
-  };
+if (matches.length === 0) {
+  throw new Error("OpenFootball respondeu sem partidas.");
 }
+
+return {
+  source: "openfootball",
+  matches,
+  rawCount: data.matches.length,
+};
 
 export default async function handler(req: any, res: any) {
   const source = getParam(req.query.source) || "espn";
