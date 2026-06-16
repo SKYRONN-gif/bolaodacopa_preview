@@ -371,13 +371,19 @@ export async function syncWorldCupMatchesFromApi(
     }
   });
 
-const nextMatches = data.matches
-  .filter(isValidApiWorldCupMatch)
+const validApiMatches = data.matches.filter(isValidApiWorldCupMatch);
+
+const nextMatches = validApiMatches
   .map((apiMatch) => {
     const existingMatch = findExistingMatchForApiMatch(apiMatch, existingMatches);
 
+    if (!existingMatch && options?.finished) {
+      return null;
+    }
+
     return apiMatchToMatch(apiMatch, existingMatch);
-  });
+  })
+  .filter((match): match is Match => Boolean(match));
 
   await writeMatchesInBatches(nextMatches, { merge: true });
 
