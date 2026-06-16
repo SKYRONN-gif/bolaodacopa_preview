@@ -35,7 +35,6 @@ function normalizeEspnStatus(event: any) {
   const type = event?.status?.type;
 
   if (type?.completed) return "finished";
-  if (type?.state === "in") return "live";
 
   return "scheduled";
 }
@@ -55,14 +54,17 @@ function mapEspnEvent(event: any) {
   if (!home || !away) return null;
 
   const kickoff = new Date(event.date);
+  const status = normalizeEspnStatus(event);
 
   return {
     id: String(event.id),
     apiFixtureId: String(event.id),
 
     dateISO: event.date,
-    date: formatDateBR(kickoff),
-    time: formatTimeBR(kickoff),
+startsAt: kickoff.toISOString(),
+startsAtMs: kickoff.getTime(),
+date: formatDateBR(kickoff),
+time: formatTimeBR(kickoff),
 
     group: event?.season?.slug || event?.week?.text || "Copa do Mundo 2026",
 
@@ -75,10 +77,11 @@ function mapEspnEvent(event: any) {
     logoA: home?.team?.logo || null,
     logoB: away?.team?.logo || null,
 
-    scoreA: numberOrNull(home?.score),
-    scoreB: numberOrNull(away?.score),
+   scoreA: status === "finished" ? numberOrNull(home?.score) : null,
+scoreB: status === "finished" ? numberOrNull(away?.score) : null,
 
-    status: normalizeEspnStatus(event),
+status,
+
     statusShort: event?.status?.type?.name || null,
     statusLong:
       event?.status?.type?.description ||
@@ -154,8 +157,10 @@ function mapOpenFootballMatch(match: any, index: number) {
     apiFixtureId: String(match?.num || match?.id || `openfootball-${index + 1}`),
 
     dateISO: kickoff?.toISOString() || match?.date || null,
-    date: kickoff ? formatDateBR(kickoff) : match?.date || null,
-    time: kickoff ? formatTimeBR(kickoff) : match?.time || null,
+startsAt: kickoff?.toISOString() || null,
+startsAtMs: kickoff ? kickoff.getTime() : null,
+date: kickoff ? formatDateBR(kickoff) : match?.date || null,
+time: kickoff ? formatTimeBR(kickoff) : match?.time || null,
 
     group: match?.group || match?.round || "Copa do Mundo 2026",
 
@@ -205,7 +210,9 @@ async function fetchFromEspn() {
     throw new Error("Formato inesperado da ESPN: events não encontrado.");
   }
 
-  const matches = data.events.map(mapEspnEvent).filter(Boolean);
+  const matches = data.events
+  .map(mapEspnEvent)
+  .filter((match: any) => match && match.startsAt && Number.isFinite(match.startsAtMs));
 
   if (matches.length === 0) {
     throw new Error("ESPN respondeu sem partidas.");
@@ -225,7 +232,9 @@ async function fetchFromOpenFootball() {
     throw new Error("Formato inesperado do OpenFootball: matches não encontrado.");
   }
 
-  const matches = data.matches.map(mapOpenFootballMatch).filter(Boolean);
+  const matches = data.matches
+  .map(mapOpenFootballMatch)
+  .filter((match: any) => match && match.startsAt && Number.isFinite(match.startsAtMs));
 
   if (matches.length === 0) {
     throw new Error("OpenFootball respondeu sem partidas.");
