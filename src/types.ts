@@ -7,18 +7,32 @@ export interface Match {
   id: string;
   teamA: string;
   teamB: string;
+
+  // Mantemos flagA/flagB porque o app atual já usa isso.
+  // Para jogos vindos da API, podemos preencher com siglas tipo BRA, ARG, FRA.
   flagA: string;
   flagB: string;
-  date: string; // ISO string or readable
+
+  date: string; // exemplo: "13/06/2026"
   time: string; // HH:MM
-  startsAt: string; // ISO datetime used for prediction locking
-  startsAtMs: number; // epoch milliseconds used by Firestore rules
+
+  startsAt: string; // ISO datetime usado para travar palpite
+  startsAtMs: number; // epoch ms usado nas Firestore Rules
+
   status: 'scheduled' | 'finished';
-  scoreA?: number; // actual score
-  scoreB?: number; // actual score
+
+  scoreA?: number; // placar real, apenas se finalizado
+  scoreB?: number; // placar real, apenas se finalizado
+
   group: string;
   venue?: string;
   city?: string;
+
+  // Campos vindos da API
+  apiFixtureId?: string;
+  logoA?: string | null;
+  logoB?: string | null;
+  source?: 'espn' | 'openfootball' | string;
 }
 
 export interface Prediction {

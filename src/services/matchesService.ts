@@ -29,12 +29,23 @@ function toFirestoreMatch(match: Match) {
   return removeUndefinedFields({ ...match });
 }
 
-async function writeMatchesInBatches(matches: Match[]): Promise<void> {
+async function writeMatchesInBatches(
+  matches: Match[],
+  options?: { merge?: boolean }
+): Promise<void> {
   let batch = writeBatch(db);
   let pendingWrites = 0;
 
   for (const match of matches) {
-    batch.set(doc(db, 'matches', match.id), toFirestoreMatch(match));
+    const matchRef = doc(db, 'matches', match.id);
+    const firestoreMatch = toFirestoreMatch(match);
+
+    if (options?.merge) {
+      batch.set(matchRef, firestoreMatch, { merge: true });
+    } else {
+      batch.set(matchRef, firestoreMatch);
+    }
+
     pendingWrites++;
 
     if (pendingWrites >= FIRESTORE_BATCH_WRITE_LIMIT) {
@@ -124,4 +135,183 @@ export async function syncDefaultMatches(matches: Match[]): Promise<void> {
   }
 
   await writeMatchesInBatches(nextMatches);
+}
+
+interface ApiWorldCupMatch {
+  id: string;
+  apiFixtureId?: string;
+  teamA: string;
+  teamB: string;
+  shortTeamA?: string | null;
+  shortTeamB?: string | null;
+  logoA?: string | null;
+  logoB?: string | null;
+  date: string;
+  time: string;
+  startsAt: string;
+  startsAtMs: number;
+  status: 'scheduled' | 'finished';
+  scoreA?: number | null;
+  scoreB?: number | null;
+  group: string;
+  venue?: string | null;
+  city?: string | null;
+  source?: string;
+}
+
+interface WorldCupFixturesResponse {
+  matches: ApiWorldCupMatch[];
+  total: number;
+  source: string;
+  fallbackFrom?: string | null;
+  syncedAt: string;
+}
+
+interface SyncWorldCupMatchesFromApiOptions {
+  limit?: number;
+  today?: boolean;
+  upcoming?: boolean;
+  finished?: boolean;
+}
+
+interface SyncWorldCupMatchesFromApiResult {
+  imported: number;
+  totalFromApi: number;
+  source: string;
+  fallbackFrom?: string | null;
+}
+
+function buildWorldCupFixturesUrl(options?: SyncWorldCupMatchesFromApiOptions) {
+  const params = new URLSearchParams();
+
+  if (options?.limit && options.limit > 0) {
+    params.set('limit', String(options.limit));
+  }
+
+  if (options?.today) {
+    params.set('today', '1');
+  }
+
+  if (options?.upcoming) {
+    params.set('upcoming', '1');
+  }
+
+  if (options?.finished) {
+    params.set('finished', '1');
+  }
+
+  const queryString = params.toString();
+
+  return queryString
+    ? `/api/worldcup-fixtures?${queryString}`
+    : '/api/worldcup-fixtures';
+}
+
+function isValidApiWorldCupMatch(match: ApiWorldCupMatch) {
+  return (
+    typeof match.id === 'string' &&
+    typeof match.teamA === 'string' &&
+    typeof match.teamB === 'string' &&
+    typeof match.date === 'string' &&
+    typeof match.time === 'string' &&
+    typeof match.startsAt === 'string' &&
+    Number.isFinite(match.startsAtMs) &&
+    (match.status === 'scheduled' || match.status === 'finished')
+  );
+}
+
+function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match {
+  const isFinishedWithScore =
+    match.status === 'finished' &&
+    typeof match.scoreA === 'number' &&
+    typeof match.scoreB === 'number';
+
+  const shouldPreserveExistingFinishedScore =
+    existingMatch?.status === 'finished' &&
+    typeof existingMatch.scoreA === 'number' &&
+    typeof existingMatch.scoreB === 'number' &&
+    !isFinishedWithScore;
+
+  return {
+    ...existingMatch,
+
+    id: match.id,
+    apiFixtureId: match.apiFixtureId,
+
+    teamA: match.teamA,
+    teamB: match.teamB,
+
+    flagA: existingMatch?.flagA || match.shortTeamA || '🏳️',
+    flagB: existingMatch?.flagB || match.shortTeamB || '🏳️',
+
+    logoA: match.logoA || existingMatch?.logoA || null,
+    logoB: match.logoB || existingMatch?.logoB || null,
+
+    date: match.date,
+    time: match.time,
+    startsAt: match.startsAt,
+    startsAtMs: match.startsAtMs,
+
+    group: match.group || existingMatch?.group || 'Copa do Mundo 2026',
+    venue: match.venue || existingMatch?.venue,
+    city: match.city || existingMatch?.city,
+
+    source: match.source || existingMatch?.source,
+
+    status: shouldPreserveExistingFinishedScore
+      ? 'finished'
+      : match.status,
+
+    scoreA: shouldPreserveExistingFinishedScore
+      ? existingMatch.scoreA
+      : isFinishedWithScore
+        ? match.scoreA ?? undefined
+        : undefined,
+
+    scoreB: shouldPreserveExistingFinishedScore
+      ? existingMatch.scoreB
+      : isFinishedWithScore
+        ? match.scoreB ?? undefined
+        : undefined,
+  };
+}
+
+export async function syncWorldCupMatchesFromApi(
+  options?: SyncWorldCupMatchesFromApiOptions
+): Promise<SyncWorldCupMatchesFromApiResult> {
+  const response = await fetch(buildWorldCupFixturesUrl(options));
+
+  if (!response.ok) {
+    throw new Error(`Erro ao buscar jogos da API. Status: ${response.status}`);
+  }
+
+  const data = (await response.json()) as WorldCupFixturesResponse;
+
+  if (!Array.isArray(data.matches)) {
+    throw new Error('Resposta inválida da API: matches não encontrado.');
+  }
+
+  const snapshot = await getDocs(collection(db, 'matches'));
+  const existingMatches = new Map<string, Match>();
+
+  snapshot.forEach((document) => {
+    const match = normalizeMatchDocument(document.id, document.data());
+
+    if (match) {
+      existingMatches.set(document.id, match);
+    }
+  });
+
+  const nextMatches = data.matches
+    .filter(isValidApiWorldCupMatch)
+    .map((apiMatch) => apiMatchToMatch(apiMatch, existingMatches.get(apiMatch.id)));
+
+  await writeMatchesInBatches(nextMatches, { merge: true });
+
+  return {
+    imported: nextMatches.length,
+    totalFromApi: data.total,
+    source: data.source,
+    fallbackFrom: data.fallbackFrom || null,
+  };
 }
