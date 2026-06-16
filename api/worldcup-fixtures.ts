@@ -74,7 +74,7 @@ export default async function handler(req: any, res: any) {
             }))
           : [],
       });
-    }
+    } 
 
     /**
      * MODO 2:
