@@ -220,6 +220,75 @@ function isValidApiWorldCupMatch(match: ApiWorldCupMatch) {
   );
 }
 
+function normalizeMatchText(value?: string | null) {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function normalizeMatchDate(value?: string | null) {
+  return (value || '').trim();
+}
+
+function normalizeMatchTime(value?: string | null) {
+  return (value || '').trim();
+}
+
+function areSameTeams(apiMatch: ApiWorldCupMatch, existingMatch: Match) {
+  const apiTeamA = normalizeMatchText(apiMatch.teamA);
+  const apiTeamB = normalizeMatchText(apiMatch.teamB);
+
+  const existingTeamA = normalizeMatchText(existingMatch.teamA);
+  const existingTeamB = normalizeMatchText(existingMatch.teamB);
+
+  const sameOrder = apiTeamA === existingTeamA && apiTeamB === existingTeamB;
+  const invertedOrder = apiTeamA === existingTeamB && apiTeamB === existingTeamA;
+
+  return sameOrder || invertedOrder;
+}
+
+function areSameSchedule(apiMatch: ApiWorldCupMatch, existingMatch: Match) {
+  const sameDate =
+    normalizeMatchDate(apiMatch.date) === normalizeMatchDate(existingMatch.date);
+
+  const sameTime =
+    normalizeMatchTime(apiMatch.time) === normalizeMatchTime(existingMatch.time);
+
+  const closeStartsAt =
+    Number.isFinite(apiMatch.startsAtMs) &&
+    Number.isFinite(existingMatch.startsAtMs) &&
+    Math.abs(apiMatch.startsAtMs - existingMatch.startsAtMs) <= 1000 * 60 * 90;
+
+  return sameDate && (sameTime || closeStartsAt);
+}
+
+function findExistingMatchForApiMatch(
+  apiMatch: ApiWorldCupMatch,
+  existingMatches: Map<string, Match>
+) {
+  const matches = Array.from(existingMatches.values());
+
+  const byApiFixtureId = matches.find(
+    (existingMatch) =>
+      existingMatch.apiFixtureId &&
+      existingMatch.apiFixtureId === apiMatch.apiFixtureId
+  );
+
+  if (byApiFixtureId) {
+    return byApiFixtureId;
+  }
+
+  const byTeamsAndSchedule = matches.find(
+    (existingMatch) =>
+      areSameTeams(apiMatch, existingMatch) &&
+      areSameSchedule(apiMatch, existingMatch)
+  );
+
+  return byTeamsAndSchedule;
+}
+
 function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match {
   const isFinishedWithScore =
     match.status === 'finished' &&
@@ -235,7 +304,7 @@ function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match 
   return {
     ...existingMatch,
 
-    id: match.id,
+    id: existingMatch?.id || match.id,
     apiFixtureId: match.apiFixtureId,
 
     teamA: match.teamA,
@@ -302,9 +371,13 @@ export async function syncWorldCupMatchesFromApi(
     }
   });
 
-  const nextMatches = data.matches
-    .filter(isValidApiWorldCupMatch)
-    .map((apiMatch) => apiMatchToMatch(apiMatch, existingMatches.get(apiMatch.id)));
+const nextMatches = data.matches
+  .filter(isValidApiWorldCupMatch)
+  .map((apiMatch) => {
+    const existingMatch = findExistingMatchForApiMatch(apiMatch, existingMatches);
+
+    return apiMatchToMatch(apiMatch, existingMatch);
+  });
 
   await writeMatchesInBatches(nextMatches, { merge: true });
 
