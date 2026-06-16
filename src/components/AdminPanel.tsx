@@ -7,6 +7,7 @@ import { ManualPointsForm } from '../features/admin/ManualPointsForm';
 import { MatchEditorForm } from '../features/admin/MatchEditorForm';
 import { MatchResultForm } from '../features/admin/MatchResultForm';
 import { AdminToastState, ToastType } from '../features/admin/types';
+import { previewLegacyBolaoData } from '../services/legacyMigrationService';
 
 import { syncWorldCupMatchesFromApi } from '../services/matchesService';
 
@@ -46,6 +47,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
   const [toast, setToast] = useState<AdminToastState | null>(null);
 
+  const [isPreviewingLegacyData, setIsPreviewingLegacyData] = useState(false);
+
   const [apiSyncMode, setApiSyncMode] = useState<
   'upcoming' | 'today' | 'finished' | 'all'
 >('upcoming');
@@ -63,6 +66,30 @@ const [isSyncingApiMatches, setIsSyncingApiMatches] = useState(false);
       setToast(null);
     }, 4500);
   };
+
+const handlePreviewLegacyData = async () => {
+  setIsPreviewingLegacyData(true);
+
+  try {
+    const result = await previewLegacyBolaoData();
+
+    triggerToast(
+      `Banco antigo encontrado: ${result.playersCount} players, ${result.matchesCount} jogos e ${result.predictionsCount} palpites.`,
+      'success'
+    );
+
+    console.log('Prévia do banco antigo:', result);
+  } catch (error) {
+    triggerToast(
+      error instanceof Error
+        ? error.message
+        : 'Erro ao verificar banco antigo.',
+      'error'
+    );
+  } finally {
+    setIsPreviewingLegacyData(false);
+  }
+};
 
   const handleSyncWorldCupMatchesFromApi = async () => {
   setIsSyncingApiMatches(true);
@@ -198,6 +225,34 @@ const [isSyncingApiMatches, setIsSyncingApiMatches] = useState(false);
           onError={(message) => triggerToast(message, 'error')}
         />
       </div>
+
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+  <div>
+    <h3 className="text-lg font-bold text-slate-900">
+      Migração do banco antigo
+    </h3>
+
+    <p className="text-sm text-slate-600 mt-1">
+      Primeiro vamos apenas verificar os dados do Firebase antigo. Essa ação não
+      grava nada no banco novo e não altera o banco antigo.
+    </p>
+  </div>
+
+  <button
+    type="button"
+    onClick={handlePreviewLegacyData}
+    disabled={isPreviewingLegacyData}
+    className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold rounded-xl px-4 py-2 transition"
+  >
+    {isPreviewingLegacyData
+      ? 'Verificando...'
+      : 'Verificar banco antigo'}
+  </button>
+
+  <p className="text-xs text-slate-500">
+    O resultado detalhado também aparece no console do navegador.
+  </p>
+</div>
 
       <AdminDangerZone
         onSyncDefaultMatches={onSyncDefaultMatches}

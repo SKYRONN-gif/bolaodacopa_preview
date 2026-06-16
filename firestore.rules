@@ -69,7 +69,11 @@ service cloud.firestore {
         "scoreB",
         "group",
         "venue",
-        "city"
+"city",
+"apiFixtureId",
+"logoA",
+"logoB",
+"source"
       ]);
     }
 
@@ -98,6 +102,10 @@ service cloud.firestore {
         && data.group.size() <= 50
         && (!data.keys().hasAny(["venue"]) || (data.venue is string && data.venue.size() <= 120))
         && (!data.keys().hasAny(["city"]) || (data.city is string && data.city.size() <= 120))
+        && (!data.keys().hasAny(["apiFixtureId"]) || (data.apiFixtureId is string && data.apiFixtureId.size() <= 128))
+&& (!data.keys().hasAny(["logoA"]) || data.logoA == null || (data.logoA is string && data.logoA.size() <= 500))
+&& (!data.keys().hasAny(["logoB"]) || data.logoB == null || (data.logoB is string && data.logoB.size() <= 500))
+&& (!data.keys().hasAny(["source"]) || (data.source is string && data.source.size() <= 50))
         && data.status in ["scheduled", "finished"]
         && (!data.keys().hasAny(["scoreA"]) || data.scoreA is number)
         && (!data.keys().hasAny(["scoreB"]) || data.scoreB is number)
