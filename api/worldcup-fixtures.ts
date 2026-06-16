@@ -260,22 +260,60 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    return res.status(200).json({
-      matches: result.matches,
-      total: result.matches.length,
-      source: result.source,
-      fallbackFrom: result.fallbackFrom || null,
-      rawCount: result.rawCount,
-      syncedAt: new Date().toISOString(),
-      ...(debug
-        ? {
-            debug: {
-              espnError,
-              firstMatches: result.matches.slice(0, 3),
-            },
-          }
-        : {}),
-    });
+    let matches = result.matches;
+
+const today = getParam(req.query.today) === "1";
+const upcoming = getParam(req.query.upcoming) === "1";
+const finished = getParam(req.query.finished) === "1";
+const limitParam = getParam(req.query.limit);
+
+const todayBR = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+}).format(new Date());
+
+if (today) {
+  matches = matches.filter((match: any) => match.date === todayBR);
+}
+
+if (upcoming) {
+  matches = matches.filter((match: any) => match.status === "scheduled");
+}
+
+if (finished) {
+  matches = matches.filter((match: any) => match.status === "finished");
+}
+
+if (limitParam) {
+  const limit = Number(limitParam);
+
+  if (!Number.isNaN(limit) && limit > 0) {
+    matches = matches.slice(0, limit);
+  }
+}
+
+return res.status(200).json({
+  matches,
+  total: matches.length,
+  totalBeforeFilters: result.matches.length,
+  source: result.source,
+  fallbackFrom: result.fallbackFrom || null,
+  rawCount: result.rawCount,
+  syncedAt: new Date().toISOString(),
+  filters: {
+    today,
+    upcoming,
+    finished,
+    limit: limitParam || null,
+  },
+  ...(debug
+    ? {
+        debug: {
+          espnError,
+          firstMatches: matches.slice(0, 3),
+        },
+      }
+    : {}),
+});
   } catch (error: any) {
     console.error("Erro na rota /api/worldcup-fixtures:", error);
 
