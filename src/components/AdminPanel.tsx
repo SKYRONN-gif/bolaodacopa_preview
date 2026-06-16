@@ -303,5 +303,6 @@ const handleImportLegacyData = async () => {
         onError={(message) => triggerToast(message, 'error')}
       />
     </div>
-  );
+  </div>
+);
 };
