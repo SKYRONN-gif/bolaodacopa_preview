@@ -1,9 +1,12 @@
-import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import {
   collection,
+  doc,
   getDocs,
   getFirestore,
+  writeBatch,
 } from 'firebase/firestore';
+
+import { db } from '../firebase';
 
 const OLD_FIREBASE_APP_NAME = 'old-bolao-production';
 
@@ -22,6 +25,11 @@ interface LegacyPreviewResult {
   predictionsCount: number;
   playerNames: string[];
   matchIds: string[];
+}
+
+interface LegacyImportResult extends LegacyPreviewResult {
+  importedMatches: number;
+  importedPlayers: number;
 }
 
 function getMissingOldFirebaseEnvKeys() {
@@ -121,5 +129,86 @@ export async function previewLegacyBolaoData(): Promise<LegacyPreviewResult> {
     predictionsCount,
     playerNames: playerNames.slice(0, 10),
     matchIds: matchIds.slice(0, 20),
+  };
+}
+
+function removeUndefinedFields<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined)
+  );
+}
+
+async function writeCollectionDocsInBatches(
+  collectionName: 'matches' | 'players',
+  docs: Array<{ id: string; data: Record<string, unknown> }>
+) {
+  let batch = writeBatch(db);
+  let pendingWrites = 0;
+
+  for (const item of docs) {
+    batch.set(
+      doc(db, collectionName, item.id),
+      removeUndefinedFields({
+        ...item.data,
+        id: item.data.id || item.id,
+      })
+    );
+
+    pendingWrites++;
+
+    if (pendingWrites >= 450) {
+      await batch.commit();
+      batch = writeBatch(db);
+      pendingWrites = 0;
+    }
+  }
+
+  if (pendingWrites > 0) {
+    await batch.commit();
+  }
+}
+
+export async function importLegacyBolaoData(): Promise<LegacyImportResult> {
+  const oldDb = getOldDb();
+
+  const [matchesSnapshot, playersSnapshot] = await Promise.all([
+    getDocs(collection(oldDb, 'matches')),
+    getDocs(collection(oldDb, 'players')),
+  ]);
+
+  let predictionsCount = 0;
+  const playerNames: string[] = [];
+
+  const legacyMatches = matchesSnapshot.docs.map((document) => ({
+    id: document.id,
+    data: document.data(),
+  }));
+
+  const legacyPlayers = playersSnapshot.docs.map((document) => {
+    const data = document.data();
+
+    predictionsCount += countPlayerPredictions(data);
+
+    if (typeof data.name === 'string' && data.name.trim()) {
+      playerNames.push(data.name);
+    }
+
+    return {
+      id: document.id,
+      data,
+    };
+  });
+
+  await writeCollectionDocsInBatches('matches', legacyMatches);
+  await writeCollectionDocsInBatches('players', legacyPlayers);
+
+  return {
+    matchesCount: matchesSnapshot.size,
+    playersCount: playersSnapshot.size,
+    predictionsCount,
+    playerNames: playerNames.slice(0, 10),
+    matchIds: matchesSnapshot.docs.map((document) => document.id).slice(0, 20),
+    importedMatches: legacyMatches.length,
+    importedPlayers: legacyPlayers.length,
   };
 }

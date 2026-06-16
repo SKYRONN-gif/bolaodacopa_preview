@@ -7,7 +7,10 @@ import { ManualPointsForm } from '../features/admin/ManualPointsForm';
 import { MatchEditorForm } from '../features/admin/MatchEditorForm';
 import { MatchResultForm } from '../features/admin/MatchResultForm';
 import { AdminToastState, ToastType } from '../features/admin/types';
-import { previewLegacyBolaoData } from '../services/legacyMigrationService';
+import {
+  importLegacyBolaoData,
+  previewLegacyBolaoData,
+} from '../services/legacyMigrationService';
 
 import { syncWorldCupMatchesFromApi } from '../services/matchesService';
 
@@ -49,6 +52,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const [isPreviewingLegacyData, setIsPreviewingLegacyData] = useState(false);
 
+  const [isImportingLegacyData, setIsImportingLegacyData] = useState(false);
+
   const [apiSyncMode, setApiSyncMode] = useState<
   'upcoming' | 'today' | 'finished' | 'all'
 >('upcoming');
@@ -88,6 +93,36 @@ const handlePreviewLegacyData = async () => {
     );
   } finally {
     setIsPreviewingLegacyData(false);
+  }
+};
+
+const handleImportLegacyData = async () => {
+  const confirmed = window.confirm(
+    'Tem certeza que deseja importar o banco antigo para este banco novo? Essa ação vai copiar players e matches preservando os IDs antigos.'
+  );
+
+  if (!confirmed) return;
+
+  setIsImportingLegacyData(true);
+
+  try {
+    const result = await importLegacyBolaoData();
+
+    triggerToast(
+      `Importação concluída: ${result.importedPlayers} players, ${result.importedMatches} jogos e ${result.predictionsCount} palpites.`,
+      'success'
+    );
+
+    console.log('Importação do banco antigo:', result);
+  } catch (error) {
+    triggerToast(
+      error instanceof Error
+        ? error.message
+        : 'Erro ao importar banco antigo.',
+      'error'
+    );
+  } finally {
+    setIsImportingLegacyData(false);
   }
 };
 
@@ -238,10 +273,11 @@ const handlePreviewLegacyData = async () => {
     </p>
   </div>
 
+<div className="flex flex-col sm:flex-row gap-3">
   <button
     type="button"
     onClick={handlePreviewLegacyData}
-    disabled={isPreviewingLegacyData}
+    disabled={isPreviewingLegacyData || isImportingLegacyData}
     className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold rounded-xl px-4 py-2 transition"
   >
     {isPreviewingLegacyData
@@ -249,9 +285,16 @@ const handlePreviewLegacyData = async () => {
       : 'Verificar banco antigo'}
   </button>
 
-  <p className="text-xs text-slate-500">
-    O resultado detalhado também aparece no console do navegador.
-  </p>
+  <button
+    type="button"
+    onClick={handleImportLegacyData}
+    disabled={isPreviewingLegacyData || isImportingLegacyData}
+    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-bold rounded-xl px-4 py-2 transition"
+  >
+    {isImportingLegacyData
+      ? 'Importando...'
+      : 'Importar banco antigo'}
+  </button>
 </div>
 
       <AdminDangerZone
