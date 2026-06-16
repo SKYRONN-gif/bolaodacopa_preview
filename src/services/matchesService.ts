@@ -26,7 +26,33 @@ function removeUndefinedFields<T extends Record<string, unknown>>(value: T) {
 }
 
 function toFirestoreMatch(match: Match) {
-  return removeUndefinedFields({ ...match });
+  const isFinishedWithScore =
+    match.status === 'finished' &&
+    typeof match.scoreA === 'number' &&
+    typeof match.scoreB === 'number';
+
+  return removeUndefinedFields({
+    id: match.id,
+    teamA: match.teamA,
+    teamB: match.teamB,
+    flagA: match.flagA,
+    flagB: match.flagB,
+    date: match.date,
+    time: match.time,
+    startsAt: match.startsAt,
+    startsAtMs: match.startsAtMs,
+    status: match.status,
+    group: match.group,
+    venue: match.venue,
+    city: match.city,
+    apiFixtureId: match.apiFixtureId,
+    logoA: match.logoA,
+    logoB: match.logoB,
+    source: match.source,
+
+    scoreA: isFinishedWithScore ? match.scoreA : undefined,
+    scoreB: isFinishedWithScore ? match.scoreB : undefined,
+  });
 }
 
 async function writeMatchesInBatches(
@@ -328,8 +354,10 @@ function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match 
     source: match.source || existingMatch?.source,
 
     status: shouldPreserveExistingFinishedScore
-      ? 'finished'
-      : match.status,
+  ? 'finished'
+  : match.status === 'finished'
+    ? 'finished'
+    : 'scheduled',
 
     scoreA: shouldPreserveExistingFinishedScore
       ? existingMatch.scoreA
