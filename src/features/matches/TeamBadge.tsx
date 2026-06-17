@@ -1,39 +1,49 @@
+import { useState } from 'react';
+
 interface TeamBadgeProps {
   flag?: string;
   logo?: string | null;
   name: string;
 }
 
-function countryCodeToFlag(value?: string) {
-  if (!value) return '';
+function getFallbackCode(flag?: string, name?: string) {
+  const cleanFlag = flag?.trim();
 
-  const code = value.trim().toUpperCase();
-
-  if (!/^[A-Z]{2}$/.test(code)) {
-    return value;
+  if (cleanFlag && /^[A-Za-z]{2,4}$/.test(cleanFlag)) {
+    return cleanFlag.toUpperCase();
   }
 
-  return code
-    .split('')
-    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
-    .join('');
+  if (name) {
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0])
+      .join('')
+      .toUpperCase();
+  }
+
+  return 'FC';
 }
 
 export function TeamBadge({ flag, logo, name }: TeamBadgeProps) {
-  if (logo) {
+  const [hasLogoError, setHasLogoError] = useState(false);
+
+  if (logo && !hasLogoError) {
     return (
       <img
         src={logo}
         alt={name}
-        className="h-10 w-10 object-contain drop-shadow-sm"
+        className="h-11 w-11 object-contain drop-shadow-sm"
         loading="lazy"
+        onError={() => setHasLogoError(true)}
       />
     );
   }
 
   return (
-    <span className="text-4xl filter drop-shadow select-none">
-      {countryCodeToFlag(flag) || '🏳️'}
+    <span className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-sm font-black text-slate-800 shadow-sm">
+      {getFallbackCode(flag, name)}
     </span>
   );
 }
