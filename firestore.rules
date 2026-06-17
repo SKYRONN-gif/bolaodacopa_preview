@@ -297,8 +297,36 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+function championPickSettingsIsValid(data) {
+  return data.keys().hasOnly([
+    "enabled",
+    "locked",
+    "bonusPoints",
+    "championTeamCode",
+    "eligibleTeams",
+    "updatedAt"
+  ])
+  && (!data.keys().hasAny(["enabled"]) || data.enabled is bool)
+  && (!data.keys().hasAny(["locked"]) || data.locked is bool)
+  && (!data.keys().hasAny(["bonusPoints"]) || (data.bonusPoints is number && data.bonusPoints >= 0 && data.bonusPoints <= 500))
+  && (!data.keys().hasAny(["championTeamCode"]) || (data.championTeamCode is string && data.championTeamCode.size() <= 20))
+  && (!data.keys().hasAny(["eligibleTeams"]) || (data.eligibleTeams is list && data.eligibleTeams.size() <= 64))
+  && (!data.keys().hasAny(["updatedAt"]) || (data.updatedAt is string && data.updatedAt.size() <= 40));
+}
+
+match /settings/{settingId} {
+  allow read: if true;
+
+  allow create, update: if settingId == "championPick"
+    && isAdmin()
+    && championPickSettingsIsValid(request.resource.data);
+
+  allow delete: if false;
+}
+
     match /{document=**} {
       allow read, write: if false;
     }
+
   }
 }

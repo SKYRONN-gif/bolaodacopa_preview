@@ -11,6 +11,7 @@ import {
   importLegacyBolaoData,
   previewLegacyBolaoData,
 } from '../services/legacyMigrationService';
+import { AdminChampionPickConfigForm } from '../features/admin/AdminChampionPickConfigForm';
 
 import { syncWorldCupMatchesFromApi } from '../services/matchesService';
 
@@ -235,6 +236,11 @@ const handleImportLegacyData = async () => {
     Use “Todos os jogos” apenas quando quiser carregar a tabela completa da Copa.
   </p>
 </div>
+
+      <AdminChampionPickConfigForm
+        onSuccess={(message) => triggerToast(message, 'success')}
+        onError={(message) => triggerToast(message, 'error')}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <MatchResultForm

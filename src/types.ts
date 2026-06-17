@@ -68,3 +68,18 @@ export interface BolaoRules {
 }
 
 export type AppTab = 'home' | 'matches' | 'ranking' | 'admin';
+
+export interface ChampionPickTeam {
+  code: string;
+  name: string;
+  logo?: string | null;
+}
+
+export interface ChampionPickSettings {
+  enabled: boolean;
+  locked: boolean;
+  bonusPoints: number;
+  championTeamCode: string;
+  eligibleTeams: ChampionPickTeam[];
+  updatedAt?: string;
+}
