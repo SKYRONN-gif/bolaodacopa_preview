@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { buildMatchStats } from '../../domain/matchStats';
 import { Match, Player } from '../../types';
 import { TeamBadge } from './TeamBadge';
+import { getMatchGroupLabel } from '../../domain/matchLabels';
 
 interface MatchDetailsModalProps {
   match: Match;
@@ -72,9 +73,9 @@ export function MatchDetailsModal({
               </div>
 
               <p className="mt-2 text-xs font-semibold text-slate-500">
-                {match.date} às {match.time}
-                {match.venue ? ` • ${match.venue}` : ''}
-              </p>
+  {getMatchGroupLabel(match.group)} • {match.date} às {match.time}
+  {match.venue ? ` • ${match.venue}` : ''}
+</p>
             </div>
 
             <button

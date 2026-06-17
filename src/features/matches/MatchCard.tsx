@@ -6,6 +6,7 @@ import { Match, Player } from '../../types';
 import { PredictionInputs } from './PredictionInputs';
 import { PredictionSide } from './types';
 import { TeamBadge } from './TeamBadge';
+import { getMatchGroupLabel } from '../../domain/matchLabels';
 
 interface EditedPrediction {
   scoreA: string;
@@ -67,7 +68,7 @@ export function MatchCard({
     >
       <div className="flex items-center justify-between gap-3 mb-4">
         <span className="text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wider">
-          {match.group}
+          {getMatchGroupLabel(match.group)}
         </span>
 
         <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 text-right">
