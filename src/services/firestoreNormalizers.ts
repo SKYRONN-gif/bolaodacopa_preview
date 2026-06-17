@@ -273,19 +273,11 @@ export function normalizeMatchDocument(
     group: cleanString(value.group, 'Sem grupo', 50),
     venue: cleanOptionalString(value.venue, 120),
     city: cleanOptionalString(value.city, 120),
-    
-    apiFixtureId:
-  typeof data.apiFixtureId === 'string' ? data.apiFixtureId : undefined,
 
-logoA:
-  typeof data.logoA === 'string' ? data.logoA : null,
-
-logoB:
-  typeof data.logoB === 'string' ? data.logoB : null,
-
-source:
-  typeof data.source === 'string' ? data.source : undefined,
-  };
+    apiFixtureId: cleanOptionalString(value.apiFixtureId, 128),
+logoA: cleanOptionalString(value.logoA, 500) || null,
+logoB: cleanOptionalString(value.logoB, 500) || null,
+source: cleanOptionalString(value.source, 50),
 }
 
 export function normalizePlayerDocument(
