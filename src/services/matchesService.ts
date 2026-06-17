@@ -247,11 +247,147 @@ function isValidApiWorldCupMatch(match: ApiWorldCupMatch) {
 }
 
 function normalizeMatchText(value?: string | null) {
-  return (value || '')
+  const normalized = (value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+
+  const aliases: Record<string, string> = {
+    // Congo
+    'rd congo': 'republica democratica do congo',
+    'dr congo': 'republica democratica do congo',
+    'congo dr': 'republica democratica do congo',
+    'democratic republic of congo': 'republica democratica do congo',
+    'republica democratica congo': 'republica democratica do congo',
+
+    // Holanda / Países Baixos
+    'holanda': 'paises baixos',
+    'netherlands': 'paises baixos',
+    'netherland': 'paises baixos',
+
+    // Costa do Marfim
+    'ivory coast': 'costa do marfim',
+    'cote d ivoire': 'costa do marfim',
+    'cote divoire': 'costa do marfim',
+
+    // Estados Unidos
+    'usa': 'estados unidos',
+    'united states': 'estados unidos',
+    'united states of america': 'estados unidos',
+
+    // Coreia
+    'south korea': 'coreia do sul',
+    'korea republic': 'coreia do sul',
+
+    // Bósnia
+    'bosnia and herzegovina': 'bosnia e herzegovina',
+    'bosnia herzegovina': 'bosnia e herzegovina',
+
+    // Alemanha
+    'germany': 'alemanha',
+
+    // Espanha
+    'spain': 'espanha',
+
+    // Suíça
+    'switzerland': 'suica',
+
+    // Suécia
+    'sweden': 'suecia',
+
+    // Turquia
+    'turkiye': 'turquia',
+    'turkey': 'turquia',
+
+    // Marrocos
+    'morocco': 'marrocos',
+
+    // Japão
+    'japan': 'japao',
+
+    // Paraguai
+    'paraguay': 'paraguai',
+  };
+
+  return aliases[normalized] || normalized;
+}
+
+function normalizeMatchDate(value?: string | null) {
+  return (value || '').trim();
+}
+
+function normalizeMatchTime(value?: string | null) {
+  return (value || '').trim();
+}
+
+function areSameTeams(apiMatch: ApiWorldCupMatch, existingMatch: Match) {
+  const apiTeamA = normalizeMatchText(apiMatch.teamA);
+  const apiTeamB = normalizeMatchText(apiMatch.teamB);
+
+  const existingTeamA = normalizeMatchText(existingMatch.teamA);
+  const existingTeamB = normalizeMatchText(existingMatch.teamB);
+
+  const sameOrder = apiTeamA === existingTeamA && apiTeamB === existingTeamB;
+  const invertedOrder = apiTeamA === existingTeamB && apiTeamB === existingTeamA;
+
+  return sameOrder || invertedOrder;
+}
+
+function areSameSchedule(apiMatch: ApiWorldCupMatch, existingMatch: Match) {
+  const sameDate =
+    normalizeMatchDate(apiMatch.date) === normalizeMatchDate(existingMatch.date);
+
+  const sameTime =
+    normalizeMatchTime(apiMatch.time) === normalizeMatchTime(existingMatch.time);
+
+  const closeStartsAt =
+    Number.isFinite(apiMatch.startsAtMs) &&
+    Number.isFinite(existingMatch.startsAtMs) &&
+    Math.abs(apiMatch.startsAtMs - existingMatch.startsAtMs) <= 1000 * 60 * 90;
+
+  return sameDate && (sameTime || closeStartsAt);
+}
+
+function isApiGeneratedMatchId(matchId: string) {
+  return /^\d+$/.test(matchId);
+}
+
+function findExistingMatchForApiMatch(
+  apiMatch: ApiWorldCupMatch,
+  existingMatches: Map<string, Match>
+) {
+  const matches = Array.from(existingMatches.values());
+
+  const byTeamsAndSchedule = matches.find(
+    (existingMatch) =>
+      !isApiGeneratedMatchId(existingMatch.id) &&
+      areSameTeams(apiMatch, existingMatch) &&
+      areSameSchedule(apiMatch, existingMatch)
+  );
+
+  if (byTeamsAndSchedule) {
+    return byTeamsAndSchedule;
+  }
+
+  const byApiFixtureId = matches.find(
+    (existingMatch) =>
+      existingMatch.apiFixtureId &&
+      existingMatch.apiFixtureId === apiMatch.apiFixtureId
+  );
+
+  if (byApiFixtureId) {
+    return byApiFixtureId;
+  }
+
+  const byAnyTeamsAndSchedule = matches.find(
+    (existingMatch) =>
+      areSameTeams(apiMatch, existingMatch) &&
+      areSameSchedule(apiMatch, existingMatch)
+  );
+
+  return byAnyTeamsAndSchedule;
 }
 
 function normalizeMatchDate(value?: string | null) {
