@@ -1,10 +1,11 @@
-import { Calendar, Info, Share2 } from 'lucide-react';
+import { Calendar, Share2 } from 'lucide-react';
 
 import { getPredictionLockMessage, isPredictionLocked } from '../../domain/rules';
 import { calculatePredictionPoints } from '../../domain/scoring';
 import { Match, Player } from '../../types';
 import { PredictionInputs } from './PredictionInputs';
 import { PredictionSide } from './types';
+import { TeamBadge } from './TeamBadge';
 
 interface EditedPrediction {
   scoreA: string;
@@ -19,7 +20,6 @@ interface MatchCardProps {
   onInputChange: (matchId: string, side: PredictionSide, value: string) => void;
   onSavePrediction: (matchId: string) => void;
   onShareMatchWhatsApp: (match: Match) => void;
-  onOpenDetails: (match: Match) => void;
 }
 
 export function MatchCard({
@@ -30,7 +30,6 @@ export function MatchCard({
   onInputChange,
   onSavePrediction,
   onShareMatchWhatsApp,
-  onOpenDetails,
 }: MatchCardProps) {
   const userPrediction = userPlayer.predictions[match.id];
   const isLocked = isPredictionLocked(match);
@@ -45,7 +44,6 @@ export function MatchCard({
   const predictionResult = calculatePredictionPoints(userPrediction, match);
   const pointsEarned =
     predictionResult.type === 'unplayed' ? null : predictionResult.points;
-
   const pointsType =
     predictionResult.type === 'unplayed' ? null : predictionResult.type;
 
@@ -86,9 +84,7 @@ export function MatchCard({
 
       <div className="grid grid-cols-7 items-center justify-center my-3 relative">
         <div className="col-span-2 flex flex-col items-center justify-center text-center">
-          <span className="text-4xl filter drop-shadow select-none">
-            {match.flagA}
-          </span>
+          <TeamBadge flag={match.flagA} logo={match.logoA} name={match.teamA} />
 
           <span className="font-bold text-slate-700 text-sm mt-2 leading-tight truncate max-w-[90px]">
             {match.teamA}
@@ -126,9 +122,7 @@ export function MatchCard({
         </div>
 
         <div className="col-span-2 flex flex-col items-center justify-center text-center">
-          <span className="text-4xl filter drop-shadow select-none">
-            {match.flagB}
-          </span>
+         <TeamBadge flag={match.flagB} logo={match.logoB} name={match.teamB} />
 
           <span className="font-bold text-slate-700 text-sm mt-2 leading-tight truncate max-w-[90px]">
             {match.teamB}
@@ -136,46 +130,33 @@ export function MatchCard({
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
-        <div className="min-w-0">
-          {pointsEarned !== null ? (
-            <div className="flex items-center gap-1.5">
-              {pointsType === 'exact' ? (
-                <span className="rounded-lg border border-amber-200 bg-amber-100 px-2.5 py-1 text-[10px] font-extrabold text-amber-800">
-                  +3 pts - Exato
-                </span>
-              ) : pointsType === 'partial' ? (
-                <span className="rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800">
-                  +1 pt - Parcial
-                </span>
-              ) : (
-                <span className="rounded-lg border border-red-100 bg-red-50 px-2.5 py-1 text-[10px] font-bold text-red-600">
-                  0 pts - Erro
-                </span>
-              )}
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onShareMatchWhatsApp(match)}
-              className="flex items-center gap-1 text-[11px] font-bold text-slate-500 transition hover:text-emerald-700"
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              <span>Postar jogo</span>
-            </button>
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onOpenDetails(match)}
-          className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-600 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
-        >
-          <span className="inline-flex items-center gap-1">
-            <Info className="h-3.5 w-3.5" />
-            Detalhes
-          </span>
-        </button>
+      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-3">
+        {pointsEarned !== null ? (
+          <div className="flex items-center gap-1.5">
+            {pointsType === 'exact' ? (
+              <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2.5 py-1 rounded-lg border border-amber-200">
+                +3 pts - Exato
+              </span>
+            ) : pointsType === 'partial' ? (
+              <span className="bg-emerald-50 text-emerald-800 text-[10px] font-extrabold px-2.5 py-1 rounded-lg border border-emerald-100">
+                +1 pt - Parcial
+              </span>
+            ) : (
+              <span className="bg-red-50 text-red-600 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-red-100">
+                0 pts - Erro
+              </span>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onShareMatchWhatsApp(match)}
+            className="text-[11px] font-bold text-slate-500 hover:text-emerald-700 flex items-center gap-1 transition"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span>Postar jogo</span>
+          </button>
+        )}
       </div>
     </article>
   );

@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 
 import { buildMatchStats } from '../../domain/matchStats';
 import { Match, Player } from '../../types';
+import { TeamBadge } from './TeamBadge';
 
 interface MatchDetailsModalProps {
   match: Match;
@@ -47,16 +48,30 @@ export function MatchDetailsModal({
       <section className="w-full max-w-2xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
         <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-wide text-emerald-700">
                 Detalhes do jogo
               </p>
 
-              <h2 className="mt-1 text-lg font-black text-slate-950">
-                {match.flagA} {match.teamA} x {match.teamB} {match.flagB}
-              </h2>
+              <div className="mt-2 flex items-center gap-3">
+                <TeamBadge
+                  flag={match.flagA}
+                  logo={match.logoA}
+                  name={match.teamA}
+                />
 
-              <p className="mt-1 text-xs font-semibold text-slate-500">
+                <h2 className="min-w-0 text-lg font-black text-slate-950">
+                  {match.teamA} x {match.teamB}
+                </h2>
+
+                <TeamBadge
+                  flag={match.flagB}
+                  logo={match.logoB}
+                  name={match.teamB}
+                />
+              </div>
+
+              <p className="mt-2 text-xs font-semibold text-slate-500">
                 {match.date} às {match.time}
                 {match.venue ? ` • ${match.venue}` : ''}
               </p>
@@ -79,6 +94,7 @@ export function MatchDetailsModal({
               <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
                 Palpites
               </p>
+
               <p className="mt-1 text-xl font-black text-slate-900">
                 {stats.totalPredictions}
               </p>
@@ -88,6 +104,7 @@ export function MatchDetailsModal({
               <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
                 {match.teamA} vence
               </p>
+
               <p className="mt-1 text-xl font-black text-slate-900">
                 {stats.teamAWins}
               </p>
@@ -97,6 +114,7 @@ export function MatchDetailsModal({
               <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
                 Empate
               </p>
+
               <p className="mt-1 text-xl font-black text-slate-900">
                 {stats.draws}
               </p>
@@ -106,6 +124,7 @@ export function MatchDetailsModal({
               <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
                 {match.teamB} vence
               </p>
+
               <p className="mt-1 text-xl font-black text-slate-900">
                 {stats.teamBWins}
               </p>
@@ -116,6 +135,7 @@ export function MatchDetailsModal({
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <div className="mb-3 flex items-center gap-2">
                 <BarChart3 className="h-4 w-4 text-emerald-700" />
+
                 <h3 className="text-sm font-black text-slate-900">
                   Placares mais escolhidos
                 </h3>
@@ -138,7 +158,8 @@ export function MatchDetailsModal({
                         </span>
 
                         <span className="text-[10px] font-black uppercase tracking-wide text-emerald-700">
-                          {score.count} {score.count === 1 ? 'pessoa' : 'pessoas'}
+                          {score.count}{' '}
+                          {score.count === 1 ? 'pessoa' : 'pessoas'}
                         </span>
                       </div>
 
@@ -154,6 +175,7 @@ export function MatchDetailsModal({
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <div className="mb-3 flex items-center gap-2">
                 <Target className="h-4 w-4 text-emerald-700" />
+
                 <h3 className="text-sm font-black text-slate-900">
                   Resultado e pontuação
                 </h3>
@@ -175,6 +197,7 @@ export function MatchDetailsModal({
                     <p className="text-[10px] font-black uppercase tracking-wide text-amber-700">
                       Exatos
                     </p>
+
                     <p className="mt-1 text-xs font-bold text-slate-800">
                       {formatNames(stats.exactPlayers)}
                     </p>
@@ -184,6 +207,7 @@ export function MatchDetailsModal({
                     <p className="text-[10px] font-black uppercase tracking-wide text-emerald-700">
                       Parciais
                     </p>
+
                     <p className="mt-1 text-xs font-bold text-slate-800">
                       {formatNames(stats.partialPlayers)}
                     </p>
@@ -193,6 +217,7 @@ export function MatchDetailsModal({
                     <p className="text-[10px] font-black uppercase tracking-wide text-red-700">
                       Deu ruim
                     </p>
+
                     <p className="mt-1 text-xs font-bold text-slate-800">
                       {formatNames(stats.errorPlayers)}
                     </p>
@@ -202,6 +227,7 @@ export function MatchDetailsModal({
                 <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
                   <div className="flex items-start gap-2">
                     <Users className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+
                     <p className="text-xs font-semibold leading-relaxed text-slate-500">
                       Quando o jogo finalizar, esta área mostra quem acertou
                       exato, quem fez parcial e quem foi de base.
