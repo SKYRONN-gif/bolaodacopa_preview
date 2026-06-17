@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { User as FirebaseUser } from 'firebase/auth';
-import { Check, Loader2, LogOut, Pencil, Trophy, X } from 'lucide-react';
+import { Check, Loader2, LogOut, Pencil, X } from 'lucide-react';
 import { AVAILABLE_AVATARS, DEFAULT_AVATAR } from '../../config/avatars';
 
 interface AppHeaderProps {
@@ -90,25 +90,24 @@ export function AppHeader({
     <header className="bg-[#063f2d] border-b border-[#0a5a40] px-4 py-4 md:px-6 shrink-0 shadow-sm">
       <div className="max-w-6xl mx-auto flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-3">
-          <div className="bg-[#0a8f5a] p-2 rounded-lg text-white shadow-sm shrink-0">
-            <Trophy className="w-6 h-6" />
-          </div>
+  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-white/15 bg-white/10 text-white shadow-sm">
+    <span className="text-sm font-black tracking-tight">SB</span>
+  </div>
 
-          <div className="text-left">
-            <p className="text-xs font-semibold text-emerald-200 uppercase tracking-wide">
-              Bolão da Copa 2026
-            </p>
+  <div className="text-left">
+    <p className="text-xs font-semibold text-emerald-200 uppercase tracking-wide">
+      Gestão de palpites
+    </p>
 
-            <h1 className="text-xl md:text-2xl font-black tracking-tight text-white leading-tight">
-              Acompanhe seus palpites
-            </h1>
+    <h1 className="text-xl md:text-2xl font-black tracking-tight text-white leading-tight">
+      Sponte Bet
+    </h1>
 
-            <p className="text-sm text-emerald-50/80 mt-1 max-w-xl">
-              Veja os jogos, salve seus palpites e acompanhe a classificação do
-              bolão.
-            </p>
-          </div>
-        </div>
+    <p className="text-sm text-emerald-50/80 mt-1 max-w-xl">
+      Copa 2026, ranking ao vivo e conferência dos palpites.
+    </p>
+  </div>
+</div>
 
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between md:justify-end">
           <div className="text-left md:text-right">
