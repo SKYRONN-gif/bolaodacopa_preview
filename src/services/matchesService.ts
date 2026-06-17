@@ -397,8 +397,8 @@ function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match 
     teamA: match.teamA,
     teamB: match.teamB,
 
-    flagA: existingMatch?.flagA || match.shortTeamA || '🏳️',
-    flagB: existingMatch?.flagB || match.shortTeamB || '🏳️',
+    flagA: match.shortTeamA?.toUpperCase() || existingMatch?.flagA || '🏳️',
+flagB: match.shortTeamB?.toUpperCase() || existingMatch?.flagB || '🏳️',
 
     logoA: match.logoA || existingMatch?.logoA || null,
     logoB: match.logoB || existingMatch?.logoB || null,
