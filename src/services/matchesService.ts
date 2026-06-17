@@ -245,7 +245,6 @@ function isValidApiWorldCupMatch(match: ApiWorldCupMatch) {
     (match.status === 'scheduled' || match.status === 'finished')
   );
 }
-
 function normalizeMatchText(value?: string | null) {
   const normalized = (value || '')
     .normalize('NFD')
@@ -261,6 +260,7 @@ function normalizeMatchText(value?: string | null) {
     'congo dr': 'republica democratica do congo',
     'democratic republic of congo': 'republica democratica do congo',
     'republica democratica congo': 'republica democratica do congo',
+    'republica democratica do congo': 'republica democratica do congo',
 
     // Holanda / Países Baixos
     'holanda': 'paises baixos',
@@ -285,29 +285,15 @@ function normalizeMatchText(value?: string | null) {
     'bosnia and herzegovina': 'bosnia e herzegovina',
     'bosnia herzegovina': 'bosnia e herzegovina',
 
-    // Alemanha
+    // Outros nomes comuns
     'germany': 'alemanha',
-
-    // Espanha
     'spain': 'espanha',
-
-    // Suíça
     'switzerland': 'suica',
-
-    // Suécia
     'sweden': 'suecia',
-
-    // Turquia
     'turkiye': 'turquia',
     'turkey': 'turquia',
-
-    // Marrocos
     'morocco': 'marrocos',
-
-    // Japão
     'japan': 'japao',
-
-    // Paraguai
     'paraguay': 'paraguai',
   };
 
@@ -374,7 +360,7 @@ function findExistingMatchForApiMatch(
   const byApiFixtureId = matches.find(
     (existingMatch) =>
       existingMatch.apiFixtureId &&
-      existingMatch.apiFixtureId === apiMatch.apiFixtureId
+      existingMatch.apiFixtureId === (apiMatch.apiFixtureId || apiMatch.id)
   );
 
   if (byApiFixtureId) {
@@ -388,67 +374,6 @@ function findExistingMatchForApiMatch(
   );
 
   return byAnyTeamsAndSchedule;
-}
-
-function normalizeMatchDate(value?: string | null) {
-  return (value || '').trim();
-}
-
-function normalizeMatchTime(value?: string | null) {
-  return (value || '').trim();
-}
-
-function areSameTeams(apiMatch: ApiWorldCupMatch, existingMatch: Match) {
-  const apiTeamA = normalizeMatchText(apiMatch.teamA);
-  const apiTeamB = normalizeMatchText(apiMatch.teamB);
-
-  const existingTeamA = normalizeMatchText(existingMatch.teamA);
-  const existingTeamB = normalizeMatchText(existingMatch.teamB);
-
-  const sameOrder = apiTeamA === existingTeamA && apiTeamB === existingTeamB;
-  const invertedOrder = apiTeamA === existingTeamB && apiTeamB === existingTeamA;
-
-  return sameOrder || invertedOrder;
-}
-
-function areSameSchedule(apiMatch: ApiWorldCupMatch, existingMatch: Match) {
-  const sameDate =
-    normalizeMatchDate(apiMatch.date) === normalizeMatchDate(existingMatch.date);
-
-  const sameTime =
-    normalizeMatchTime(apiMatch.time) === normalizeMatchTime(existingMatch.time);
-
-  const closeStartsAt =
-    Number.isFinite(apiMatch.startsAtMs) &&
-    Number.isFinite(existingMatch.startsAtMs) &&
-    Math.abs(apiMatch.startsAtMs - existingMatch.startsAtMs) <= 1000 * 60 * 90;
-
-  return sameDate && (sameTime || closeStartsAt);
-}
-
-function findExistingMatchForApiMatch(
-  apiMatch: ApiWorldCupMatch,
-  existingMatches: Map<string, Match>
-) {
-  const matches = Array.from(existingMatches.values());
-
-  const byApiFixtureId = matches.find(
-    (existingMatch) =>
-      existingMatch.apiFixtureId &&
-      existingMatch.apiFixtureId === apiMatch.apiFixtureId
-  );
-
-  if (byApiFixtureId) {
-    return byApiFixtureId;
-  }
-
-  const byTeamsAndSchedule = matches.find(
-    (existingMatch) =>
-      areSameTeams(apiMatch, existingMatch) &&
-      areSameSchedule(apiMatch, existingMatch)
-  );
-
-  return byTeamsAndSchedule;
 }
 
 function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match {
@@ -467,7 +392,7 @@ function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match 
     ...existingMatch,
 
     id: existingMatch?.id || match.id,
-    apiFixtureId: match.apiFixtureId,
+    apiFixtureId: match.apiFixtureId || match.id,
 
     teamA: match.teamA,
     teamB: match.teamB,
@@ -490,10 +415,10 @@ function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match 
     source: match.source || existingMatch?.source,
 
     status: shouldPreserveExistingFinishedScore
-  ? 'finished'
-  : match.status === 'finished'
-    ? 'finished'
-    : 'scheduled',
+      ? 'finished'
+      : match.status === 'finished'
+        ? 'finished'
+        : 'scheduled',
 
     scoreA: shouldPreserveExistingFinishedScore
       ? existingMatch.scoreA
