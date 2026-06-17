@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { User as FirebaseUser } from 'firebase/auth';
-import { Check, Loader2, LogOut, Pencil, X } from 'lucide-react';
+import { BadgeDollarSign, Check, Loader2, LogOut, Pencil, X } from 'lucide-react';
 import { AVAILABLE_AVATARS, DEFAULT_AVATAR } from '../../config/avatars';
 
 interface AppHeaderProps {
@@ -91,8 +91,8 @@ export function AppHeader({
       <div className="max-w-6xl mx-auto flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-3">
   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-white/15 bg-white/10 text-white shadow-sm">
-    <span className="text-sm font-black tracking-tight">SB</span>
-  </div>
+  <BadgeDollarSign className="h-6 w-6" />
+</div>
 
   <div className="text-left">
     <p className="text-xs font-semibold text-emerald-200 uppercase tracking-wide">
