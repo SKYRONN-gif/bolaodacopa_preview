@@ -5,6 +5,7 @@ import { PrizeSummary } from '../features/leaderboard/PrizeSummary';
 import { RankingMobileList } from '../features/leaderboard/RankingMobileList';
 import { RankingTable } from '../features/leaderboard/RankingTable';
 import { Match, Player } from '../types';
+import { AwardsPanel } from '../features/leaderboard/AwardsPanel';
 
 interface LeaderboardProps {
   matches: Match[];
@@ -23,6 +24,8 @@ export function Leaderboard({
         paidPlayersCount={paidPlayersCount}
         totalPlayersCount={players.length}
       />
+
+      <AwardsPanel matches={matches} players={players} />
 
       <section className="app-card overflow-hidden" id="ranking-container">
         <div className="p-4 md:p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
