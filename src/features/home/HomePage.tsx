@@ -1,4 +1,5 @@
 import { MessageSquare, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
+import { ChampionPickCard } from '../championPick/ChampionPickCard';
 
 interface HomePageProps {
   totalPrizePool: number;
@@ -57,7 +58,8 @@ export function HomePage({
             </div>
           </div>
 
-          <aside className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <div className="space-y-4">
+  <aside className="bg-slate-50 border border-slate-200 rounded-xl p-4">
             <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-200">
               <div>
                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
@@ -115,8 +117,10 @@ export function HomePage({
               <span>Entrada por pessoa</span>
               <strong className="text-slate-900">R$ 10,00</strong>
             </div>
-          </aside>
-        </div>
+            </aside>
+
+  <ChampionPickCard bonusPoints={30} isOpen={false} />
+</div>
       </section>
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
