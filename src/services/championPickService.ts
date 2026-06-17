@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import type { ChampionPickSettings, ChampionPickTeam } from '../types';
@@ -102,5 +102,28 @@ export async function saveChampionPickSettings(
       updatedAt: new Date().toISOString(),
     },
     { merge: true }
+  );
+}
+
+export function subscribeToChampionPickSettings({
+  onData,
+  onError,
+}: {
+  onData: (settings: ChampionPickSettings) => void;
+  onError: (error: unknown) => void;
+}) {
+  return onSnapshot(
+    CHAMPION_PICK_SETTINGS_REF,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onData(DEFAULT_CHAMPION_PICK_SETTINGS);
+        return;
+      }
+
+      onData(normalizeChampionPickSettings(snapshot.data()));
+    },
+    (error) => {
+      onError(error);
+    }
   );
 }

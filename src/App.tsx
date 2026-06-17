@@ -40,6 +40,11 @@ import {
   subscribeToPlayers,
 } from './services/playersService';
 import { AppTab, Match, Player, Prediction } from './types';
+import {
+  DEFAULT_CHAMPION_PICK_SETTINGS,
+  subscribeToChampionPickSettings,
+} from './services/championPickService';
+import type { Match, Player, ChampionPickSettings } from './types';
 
 const CAN_USE_LOCAL_FALLBACK =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_LOCAL_FALLBACK === 'true';
@@ -65,6 +70,9 @@ function createPlayerFromFirebaseUser(user: FirebaseUser): Player {
     isAdmin: false,
   };
 }
+
+const [championPickSettings, setChampionPickSettings] =
+  useState<ChampionPickSettings>(DEFAULT_CHAMPION_PICK_SETTINGS);
 
 function emailsMatch(first?: string | null, second?: string | null) {
   if (!first || !second) return false;
@@ -199,6 +207,17 @@ export default function App() {
 
     return () => unsubscribeMatches();
   }, []);
+
+  useEffect(() => {
+  const unsubscribe = subscribeToChampionPickSettings({
+    onData: setChampionPickSettings,
+    onError: (error) => {
+      console.error('Erro ao carregar configuração da Bolsa Campeão:', error);
+    },
+  });
+
+  return unsubscribe;
+}, []);
 
   useEffect(() => {
     const unsubscribePlayers = subscribeToPlayers({
@@ -670,13 +689,14 @@ export default function App() {
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 pb-24 md:py-8">
         {activeTab === 'home' && (
           <HomePage
-            totalPrizePool={totalPrizePool}
-            firstPrize={firstPrize}
-            secondPrize={secondPrize}
-            participantsCount={paidParticipantsCount}
-            onGoToMatches={() => setActiveTab('matches')}
-            onGoToRanking={() => setActiveTab('ranking')}
-          />
+  totalPrizePool={totalPrizePool}
+  firstPrize={firstPrize}
+  secondPrize={secondPrize}
+  participantsCount={paidPlayersCount}
+  championPickSettings={championPickSettings}
+  onGoToMatches={() => setActiveView('matches')}
+  onGoToRanking={() => setActiveView('ranking')}
+/>
         )}
 
         {activeTab === 'matches' && (

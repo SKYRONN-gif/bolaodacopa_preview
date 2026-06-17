@@ -8,12 +8,14 @@ import {
   Zap,
 } from 'lucide-react';
 import { ChampionPickCard } from '../championPick/ChampionPickCard';
+import type { ChampionPickSettings } from '../../types';
 
 interface HomePageProps {
   totalPrizePool: number;
   firstPrize: number;
   secondPrize: number;
   participantsCount: number;
+  championPickSettings: ChampionPickSettings;
   onGoToMatches: () => void;
   onGoToRanking: () => void;
 }
@@ -23,6 +25,7 @@ export function HomePage({
   firstPrize,
   secondPrize,
   participantsCount,
+  championPickSettings,
   onGoToMatches,
   onGoToRanking,
 }: HomePageProps) {
@@ -189,7 +192,10 @@ export function HomePage({
               </div>
             </aside>
 
-            <ChampionPickCard bonusPoints={30} isOpen={false} />
+            <ChampionPickCard
+  bonusPoints={championPickSettings.bonusPoints}
+  isOpen={championPickSettings.enabled && !championPickSettings.locked}
+/>
           </div>
         </div>
       </section>
