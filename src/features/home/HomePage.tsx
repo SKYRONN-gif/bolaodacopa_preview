@@ -121,6 +121,7 @@ export function HomePage({
 
   <ChampionPickCard bonusPoints={30} isOpen={false} />
 </div>
+ </div>
       </section>
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
