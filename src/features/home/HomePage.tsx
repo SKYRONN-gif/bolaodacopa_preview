@@ -1,4 +1,12 @@
-import { MessageSquare, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
+import {
+  CalendarClock,
+  MessageSquare,
+  ShieldCheck,
+  Sparkles,
+  Trophy,
+  Users,
+  Zap,
+} from 'lucide-react';
 import { ChampionPickCard } from '../championPick/ChampionPickCard';
 
 interface HomePageProps {
@@ -30,7 +38,7 @@ export function HomePage({
 
             <div className="space-y-2">
               <h2 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 leading-tight">
-                Faça seus palpites com calma e acompanhe a disputa do grupo.
+                Faça seus palpites com calma e acompanhe a disputa da Copa.
               </h2>
 
               <p className="text-sm text-slate-600 leading-relaxed max-w-2xl">
@@ -57,6 +65,59 @@ export function HomePage({
               </button>
             </div>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 max-w-3xl">
+  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className="flex items-center gap-2 text-emerald-700">
+      <Users className="h-4 w-4" />
+      <span className="text-[11px] font-black uppercase tracking-wide">
+        Participantes
+      </span>
+    </div>
+
+    <p className="mt-2 text-xl font-black text-slate-950">
+      {participantsCount}
+    </p>
+
+    <p className="mt-1 text-xs font-semibold text-slate-500">
+      Entraram no prêmio total.
+    </p>
+  </div>
+
+  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className="flex items-center gap-2 text-amber-700">
+      <CalendarClock className="h-4 w-4" />
+      <span className="text-[11px] font-black uppercase tracking-wide">
+        Bloqueio
+      </span>
+    </div>
+
+    <p className="mt-2 text-xl font-black text-slate-950">
+      No horário
+    </p>
+
+    <p className="mt-1 text-xs font-semibold text-slate-500">
+      Começou o jogo, o palpite trava.
+    </p>
+  </div>
+
+  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className="flex items-center gap-2 text-blue-700">
+      <Zap className="h-4 w-4" />
+      <span className="text-[11px] font-black uppercase tracking-wide">
+        Ranking
+      </span>
+    </div>
+
+    <p className="mt-2 text-xl font-black text-slate-950">
+      Auto
+    </p>
+
+    <p className="mt-1 text-xs font-semibold text-slate-500">
+      Pontuação recalculada após resultado.
+    </p>
+  </div>
+</div>
 
           <div className="space-y-4">
   <aside className="bg-slate-50 border border-slate-200 rounded-xl p-4">
