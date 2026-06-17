@@ -279,6 +279,7 @@ logoA: cleanOptionalString(value.logoA, 500) || null,
 logoB: cleanOptionalString(value.logoB, 500) || null,
 source: cleanOptionalString(value.source, 50),
 }
+}
 
 export function normalizePlayerDocument(
   documentId: string,
