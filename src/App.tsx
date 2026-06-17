@@ -39,12 +39,17 @@ import {
   savePlayerProfile,
   subscribeToPlayers,
 } from './services/playersService';
-import { AppTab, Match, Player, Prediction } from './types';
 import {
   DEFAULT_CHAMPION_PICK_SETTINGS,
   subscribeToChampionPickSettings,
 } from './services/championPickService';
-import type { Match, Player, ChampionPickSettings } from './types';
+import type {
+  AppTab,
+  ChampionPickSettings,
+  Match,
+  Player,
+  Prediction,
+} from './types';
 
 const CAN_USE_LOCAL_FALLBACK =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_LOCAL_FALLBACK === 'true';
@@ -70,9 +75,6 @@ function createPlayerFromFirebaseUser(user: FirebaseUser): Player {
     isAdmin: false,
   };
 }
-
-const [championPickSettings, setChampionPickSettings] =
-  useState<ChampionPickSettings>(DEFAULT_CHAMPION_PICK_SETTINGS);
 
 function emailsMatch(first?: string | null, second?: string | null) {
   if (!first || !second) return false;
@@ -151,6 +153,9 @@ export default function App() {
   const [hasPlayersSnapshotResolved, setHasPlayersSnapshotResolved] =
     useState(false);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
+
+  const [championPickSettings, setChampionPickSettings] =
+  useState<ChampionPickSettings>(DEFAULT_CHAMPION_PICK_SETTINGS);
 
   const isLoading = isLoadingMatches || isLoadingPlayers;
 
@@ -694,8 +699,8 @@ export default function App() {
   secondPrize={secondPrize}
   participantsCount={paidPlayersCount}
   championPickSettings={championPickSettings}
-  onGoToMatches={() => setActiveView('matches')}
-  onGoToRanking={() => setActiveView('ranking')}
+ onGoToMatches={() => setActiveTab('matches')}
+onGoToRanking={() => setActiveTab('ranking')}
 />
         )}
 
