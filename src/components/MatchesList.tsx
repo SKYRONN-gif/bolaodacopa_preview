@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Match, Player } from '../types';
 import { BulkPredictionActions } from '../features/matches/BulkPredictionActions';
 import { MatchCard } from '../features/matches/MatchCard';
+import { MatchDetailsModal } from '../features/matches/MatchDetailsModal';
 import { MatchFilterTabs } from '../features/matches/MatchFilterTabs';
 import {
   buildAllPredictionsClipboardText,
@@ -28,6 +29,7 @@ type EditedPredictions = Record<
 
 interface MatchesListProps {
   matches: Match[];
+  players: Player[];
   userPlayer: Player;
   canEdit: boolean;
   onUpdatePrediction: (
@@ -41,6 +43,7 @@ const MATCHES_PAGE_SIZE = 24;
 
 export function MatchesList({
   matches,
+  players,
   userPlayer,
   canEdit,
   onUpdatePrediction,
@@ -48,6 +51,10 @@ export function MatchesList({
   const [activeFilter, setActiveFilter] = useState<MatchFilter>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [editedPreds, setEditedPreds] = useState<EditedPredictions>({});
+  const [selectedMatchDetails, setSelectedMatchDetails] = useState<Match | null>(
+    null
+  );
+
   const [toast, setToast] = useState<{
     message: string;
     type: 'success' | 'info' | 'error';
@@ -58,6 +65,7 @@ export function MatchesList({
     type: 'success' | 'info' | 'error' = 'success'
   ) => {
     setToast({ message, type });
+
     window.setTimeout(() => {
       setToast(null);
     }, 4000);
@@ -194,14 +202,18 @@ export function MatchesList({
     1,
     Math.ceil(filteredMatches.length / MATCHES_PAGE_SIZE)
   );
+
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const firstVisibleMatchIndex = (safeCurrentPage - 1) * MATCHES_PAGE_SIZE;
+
   const visibleMatches = filteredMatches.slice(
     firstVisibleMatchIndex,
     firstVisibleMatchIndex + MATCHES_PAGE_SIZE
   );
+
   const visibleStart =
     filteredMatches.length === 0 ? 0 : firstVisibleMatchIndex + 1;
+
   const visibleEnd = Math.min(
     firstVisibleMatchIndex + visibleMatches.length,
     filteredMatches.length
@@ -227,6 +239,14 @@ export function MatchesList({
 
           <span className="text-xs font-bold">{toast.message}</span>
         </div>
+      )}
+
+      {selectedMatchDetails && (
+        <MatchDetailsModal
+          match={selectedMatchDetails}
+          players={players}
+          onClose={() => setSelectedMatchDetails(null)}
+        />
       )}
 
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
@@ -264,6 +284,7 @@ export function MatchesList({
                 onInputChange={handleInputChange}
                 onSavePrediction={handleSavePrediction}
                 onShareMatchWhatsApp={handleShareMatchWhatsApp}
+                onOpenDetails={setSelectedMatchDetails}
               />
             ))}
           </div>

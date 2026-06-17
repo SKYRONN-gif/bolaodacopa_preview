@@ -705,11 +705,12 @@ export default function App() {
             )}
 
             <MatchesList
-              matches={matches}
-              userPlayer={matchesUserPlayer}
-              canEdit={canEditPredictions}
-              onUpdatePrediction={handleUpdatePrediction}
-            />
+  matches={matches}
+  players={players}
+  userPlayer={matchesUserPlayer}
+  canEdit={canEditPredictions}
+  onUpdatePrediction={handleUpdatePrediction}
+/>
           </div>
         )}
 
