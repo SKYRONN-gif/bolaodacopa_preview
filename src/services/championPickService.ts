@@ -185,6 +185,7 @@ export function subscribeToChampionPick({
   onData: (pick: ChampionPick | null) => void;
   onError: (error: unknown) => void;
 }) {
+
   let pickDocumentId = '';
 
   try {

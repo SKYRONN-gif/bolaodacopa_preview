@@ -33,7 +33,6 @@ import {
 } from './services/matchesService';
 import {
   savePlayer,
-  savePlayerEmail,
   savePlayerManualAdjustment,
   savePlayerPrediction,
   savePlayerProfile,
@@ -221,83 +220,6 @@ function mergePlayersByEmail(players: Player[]): Player[] {
   }
 
   return mergedPlayers;
-}
-
-function getNormalizedEmail(email?: string | null) {
-  return email?.trim().toLowerCase() || '';
-}
-
-function mergePlayersKeepingPrimary(
-  primaryPlayer: Player,
-  secondaryPlayer: Player
-): Player {
-  return {
-    ...primaryPlayer,
-    name: primaryPlayer.name || secondaryPlayer.name,
-    avatar: primaryPlayer.avatar || secondaryPlayer.avatar || DEFAULT_AVATAR,
-    email: primaryPlayer.email || secondaryPlayer.email || '',
-    isAdmin: Boolean(primaryPlayer.isAdmin || secondaryPlayer.isAdmin),
-    predictions: {
-      ...secondaryPlayer.predictions,
-      ...primaryPlayer.predictions,
-    },
-    manualPointsAdjustment:
-      typeof primaryPlayer.manualPointsAdjustment === 'number'
-        ? primaryPlayer.manualPointsAdjustment
-        : secondaryPlayer.manualPointsAdjustment ?? 0,
-    manualPointsAdjustmentUpdatedAt:
-      primaryPlayer.manualPointsAdjustmentUpdatedAt ||
-      secondaryPlayer.manualPointsAdjustmentUpdatedAt ||
-      '',
-    lastPredictionMatchId:
-      primaryPlayer.lastPredictionMatchId ||
-      secondaryPlayer.lastPredictionMatchId ||
-      '',
-  };
-}
-
-function mergePlayersByEmail(players: Player[]): Player[] {
-  const mergedPlayers: Player[] = [];
-  const emailIndexMap = new Map<string, number>();
-
-  for (const player of players) {
-    const email = getNormalizedEmail(player.email);
-
-    if (!email) {
-      mergedPlayers.push(player);
-      continue;
-    }
-
-    const existingIndex = emailIndexMap.get(email);
-
-    if (existingIndex === undefined) {
-      emailIndexMap.set(email, mergedPlayers.length);
-      mergedPlayers.push(player);
-      continue;
-    }
-
-    const existingPlayer = mergedPlayers[existingIndex];
-
-    const primaryPlayer =
-      existingPlayer.isAdmin || !player.isAdmin ? existingPlayer : player;
-
-    const secondaryPlayer = primaryPlayer.id === existingPlayer.id
-      ? player
-      : existingPlayer;
-
-    mergedPlayers[existingIndex] = mergePlayersKeepingPrimary(
-      primaryPlayer,
-      secondaryPlayer
-    );
-  }
-
-  return mergedPlayers;
-}
-
-function hasPredictionsToImport(targetPlayer: Player, sourcePlayer: Player) {
-  return Object.keys(sourcePlayer.predictions || {}).some(
-    (matchId) => !targetPlayer.predictions?.[matchId]
-  );
 }
 
 function upsertPlayer(players: Player[], nextPlayer: Player): Player[] {
@@ -559,9 +481,7 @@ useEffect(() => {
   );
 
   setUserPlayer(mergedPlayer);
-
-  setPlayers((currentPlayers) => upsertPlayer(currentPlayers, mergedPlayer));
-
+  
   const shouldCreateCurrentPlayer = !playerByUid;
 
   const shouldUpdatePredictions =
