@@ -4,6 +4,7 @@ import {
   onSnapshot,
   setDoc,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Player, Prediction } from '../types';
@@ -100,4 +101,26 @@ export async function seedPlayers(players: Player[]): Promise<void> {
   for (const player of players) {
     await savePlayer(player);
   }
+}
+
+export async function consolidatePlayerDuplicates({
+  mergedPlayer,
+  duplicatePlayerIds,
+}: {
+  mergedPlayer: Player;
+  duplicatePlayerIds: string[];
+}): Promise<void> {
+  const batch = writeBatch(db);
+
+  batch.set(doc(db, 'players', mergedPlayer.id), mergedPlayer, {
+    merge: true,
+  });
+
+  for (const duplicatePlayerId of duplicatePlayerIds) {
+    if (duplicatePlayerId !== mergedPlayer.id) {
+      batch.delete(doc(db, 'players', duplicatePlayerId));
+    }
+  }
+
+  await batch.commit();
 }

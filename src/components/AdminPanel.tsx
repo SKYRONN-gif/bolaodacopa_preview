@@ -14,10 +14,12 @@ import {
 import { AdminChampionPickConfigForm } from '../features/admin/AdminChampionPickConfigForm';
 
 import { syncWorldCupMatchesFromApi } from '../services/matchesService';
+import { consolidatePlayerDuplicates } from '../services/playersService';
 
 interface AdminPanelProps {
   matches: Match[];
   players: Player[];
+  preferredPlayerId?: string;
   onUpdateMatchResult: (
     matchId: string,
     scoreA: number,
@@ -40,11 +42,160 @@ interface AdminPanelProps {
   onSyncDefaultMatches: () => void | Promise<void>;
 }
 
+function getNormalizedEmail(email?: string | null) {
+  return email?.trim().toLowerCase() || '';
+}
+
+function getPredictionTime(prediction?: Prediction) {
+  const rawDate = prediction?.updatedAt || prediction?.createdAt || '';
+  const timestamp = Date.parse(rawDate);
+
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function shouldUseNextPrediction(
+  currentPrediction?: Prediction,
+  nextPrediction?: Prediction
+) {
+  if (!nextPrediction) return false;
+  if (!currentPrediction) return true;
+
+  return getPredictionTime(nextPrediction) > getPredictionTime(currentPrediction);
+}
+
+function mergePredictionMaps(
+  primaryPredictions: Record<string, Prediction> = {},
+  secondaryPredictions: Record<string, Prediction> = {}
+) {
+  const mergedPredictions: Record<string, Prediction> = {
+    ...primaryPredictions,
+  };
+
+  for (const [matchId, secondaryPrediction] of Object.entries(
+    secondaryPredictions
+  )) {
+    if (
+      shouldUseNextPrediction(
+        mergedPredictions[matchId],
+        secondaryPrediction
+      )
+    ) {
+      mergedPredictions[matchId] = secondaryPrediction;
+    }
+  }
+
+  return mergedPredictions;
+}
+
+function countPredictions(player: Player) {
+  return Object.keys(player.predictions || {}).length;
+}
+
+function choosePrimaryPlayer(
+  duplicatedPlayers: Player[],
+  preferredPlayerId?: string
+) {
+  const preferredPlayer = duplicatedPlayers.find(
+    (player) => player.id === preferredPlayerId
+  );
+
+  if (preferredPlayer) {
+    return preferredPlayer;
+  }
+
+  return [...duplicatedPlayers].sort((firstPlayer, secondPlayer) => {
+    if (Boolean(firstPlayer.isAdmin) !== Boolean(secondPlayer.isAdmin)) {
+      return Number(secondPlayer.isAdmin) - Number(firstPlayer.isAdmin);
+    }
+
+    return countPredictions(secondPlayer) - countPredictions(firstPlayer);
+  })[0];
+}
+
+function mergePlayersIntoPrimary(
+  primaryPlayer: Player,
+  duplicatedPlayers: Player[]
+): Player {
+  return duplicatedPlayers.reduce<Player>((mergedPlayer, currentPlayer) => {
+    if (currentPlayer.id === mergedPlayer.id) {
+      return mergedPlayer;
+    }
+
+    return {
+      ...mergedPlayer,
+      name: mergedPlayer.name || currentPlayer.name,
+      avatar: mergedPlayer.avatar || currentPlayer.avatar,
+      email: mergedPlayer.email || currentPlayer.email || '',
+      isAdmin: Boolean(mergedPlayer.isAdmin || currentPlayer.isAdmin),
+      predictions: mergePredictionMaps(
+        mergedPlayer.predictions,
+        currentPlayer.predictions
+      ),
+      manualPointsAdjustment:
+        typeof mergedPlayer.manualPointsAdjustment === 'number'
+          ? mergedPlayer.manualPointsAdjustment
+          : currentPlayer.manualPointsAdjustment ?? 0,
+      manualPointsAdjustmentUpdatedAt:
+        mergedPlayer.manualPointsAdjustmentUpdatedAt ||
+        currentPlayer.manualPointsAdjustmentUpdatedAt ||
+        '',
+      lastPredictionMatchId:
+        mergedPlayer.lastPredictionMatchId ||
+        currentPlayer.lastPredictionMatchId ||
+        '',
+    };
+  }, primaryPlayer);
+}
+
+function buildDuplicatePlayerPlans(
+  players: Player[],
+  preferredPlayerId?: string
+) {
+  const playersByEmail = new Map<string, Player[]>();
+
+  for (const player of players) {
+    const email = getNormalizedEmail(player.email);
+
+    if (!email) continue;
+
+    const currentPlayers = playersByEmail.get(email) || [];
+
+    playersByEmail.set(email, [...currentPlayers, player]);
+  }
+
+  return Array.from(playersByEmail.entries())
+    .filter(([, duplicatedPlayers]) => duplicatedPlayers.length > 1)
+    .map(([email, duplicatedPlayers]) => {
+      const primaryPlayer = choosePrimaryPlayer(
+        duplicatedPlayers,
+        preferredPlayerId
+      );
+
+      const mergedPlayer = mergePlayersIntoPrimary(
+        primaryPlayer,
+        duplicatedPlayers
+      );
+
+      const duplicatePlayers = duplicatedPlayers.filter(
+        (player) => player.id !== primaryPlayer.id
+      );
+
+      return {
+        email,
+        primaryPlayer,
+        mergedPlayer,
+        duplicatePlayers,
+        totalPredictions: countPredictions(mergedPlayer),
+      };
+    });
+}
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   matches,
   players,
   onUpdateMatchResult,
   onSaveMatch,
+  preferredPlayerId,
   onAddPlayer,
   onUpdateManualAdjustment,
   onSyncDefaultMatches,
@@ -54,6 +205,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isPreviewingLegacyData, setIsPreviewingLegacyData] = useState(false);
 
   const [isImportingLegacyData, setIsImportingLegacyData] = useState(false);
+
+  const [isConsolidatingPlayers, setIsConsolidatingPlayers] = useState(false);
 
   const [apiSyncMode, setApiSyncMode] = useState<
   'upcoming' | 'today' | 'finished' | 'all'
@@ -124,6 +277,58 @@ const handleImportLegacyData = async () => {
     );
   } finally {
     setIsImportingLegacyData(false);
+  }
+};
+
+const handleConsolidateDuplicatePlayers = async () => {
+  const duplicatePlans = buildDuplicatePlayerPlans(players, preferredPlayerId);
+
+  if (duplicatePlans.length === 0) {
+    triggerToast('Nenhum jogador duplicado por e-mail encontrado.', 'info');
+    return;
+  }
+
+  const duplicatedEmails = duplicatePlans
+    .map(
+      (plan) =>
+        `${plan.email}: manter ${plan.primaryPlayer.name} (${plan.primaryPlayer.id}) e apagar ${plan.duplicatePlayers.length} duplicado(s)`
+    )
+    .join('\n');
+
+  const confirmed = window.confirm(
+    `Encontramos ${duplicatePlans.length} e-mail(s) duplicado(s).\n\n${duplicatedEmails}\n\nDeseja consolidar agora?`
+  );
+
+  if (!confirmed) return;
+
+  setIsConsolidatingPlayers(true);
+
+  try {
+    for (const plan of duplicatePlans) {
+      await consolidatePlayerDuplicates({
+        mergedPlayer: plan.mergedPlayer,
+        duplicatePlayerIds: plan.duplicatePlayers.map((player) => player.id),
+      });
+    }
+
+    const removedPlayersCount = duplicatePlans.reduce(
+      (total, plan) => total + plan.duplicatePlayers.length,
+      0
+    );
+
+    triggerToast(
+      `Consolidação concluída: ${removedPlayersCount} jogador(es) duplicado(s) removido(s).`,
+      'success'
+    );
+  } catch (error) {
+    triggerToast(
+      error instanceof Error
+        ? error.message
+        : 'Erro ao consolidar jogadores duplicados.',
+      'error'
+    );
+  } finally {
+    setIsConsolidatingPlayers(false);
   }
 };
 
@@ -300,6 +505,35 @@ const handleImportLegacyData = async () => {
     {isImportingLegacyData
       ? 'Importando...'
       : 'Importar banco antigo'}
+  </button>
+</div>
+
+<div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+  <div>
+    <h4 className="text-sm font-bold text-amber-950">
+      Consolidar jogadores duplicados
+    </h4>
+
+    <p className="mt-1 text-xs leading-relaxed text-amber-800">
+      Use depois de importar o banco antigo. O sistema agrupa jogadores com o
+      mesmo e-mail, junta os palpites no jogador principal e remove os
+      duplicados.
+    </p>
+  </div>
+
+  <button
+    type="button"
+    onClick={handleConsolidateDuplicatePlayers}
+    disabled={
+      isPreviewingLegacyData ||
+      isImportingLegacyData ||
+      isConsolidatingPlayers
+    }
+    className="bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white font-bold rounded-xl px-4 py-2 transition"
+  >
+    {isConsolidatingPlayers
+      ? 'Consolidando...'
+      : 'Consolidar duplicados por e-mail'}
   </button>
 </div>
 

@@ -481,7 +481,7 @@ useEffect(() => {
   );
 
   setUserPlayer(mergedPlayer);
-  
+
   const shouldCreateCurrentPlayer = !playerByUid;
 
   const shouldUpdatePredictions =
@@ -992,6 +992,7 @@ const paidPlayers = useMemo(
           <AdminPanel
             matches={matches}
             players={players}
+            preferredPlayerId={currentUser?.uid}
             onUpdateMatchResult={handleUpdateMatchResult}
             onSaveMatch={handleSaveMatchDetails}
             onAddPlayer={handleAddPlayer}
