@@ -41,11 +41,15 @@ import {
 } from './services/playersService';
 import {
   DEFAULT_CHAMPION_PICK_SETTINGS,
+  saveChampionPick,
+  subscribeToChampionPick,
   subscribeToChampionPickSettings,
 } from './services/championPickService';
 import type {
   AppTab,
+  ChampionPick,
   ChampionPickSettings,
+  ChampionPickTeam,
   Match,
   Player,
   Prediction,
@@ -157,6 +161,11 @@ export default function App() {
   const [championPickSettings, setChampionPickSettings] =
   useState<ChampionPickSettings>(DEFAULT_CHAMPION_PICK_SETTINGS);
 
+  const [currentChampionPick, setCurrentChampionPick] =
+  useState<ChampionPick | null>(null);
+
+const [isSavingChampionPick, setIsSavingChampionPick] = useState(false);
+
   const isLoading = isLoadingMatches || isLoadingPlayers;
 
   const anonymousViewer = useMemo<Player>(
@@ -223,6 +232,23 @@ export default function App() {
 
   return unsubscribe;
 }, []);
+
+useEffect(() => {
+  if (!currentUser || !userPlayer) {
+    setCurrentChampionPick(null);
+    return;
+  }
+
+  const unsubscribe = subscribeToChampionPick({
+    playerId: userPlayer.id,
+    onData: setCurrentChampionPick,
+    onError: (error) => {
+      console.error('Erro ao carregar escolha da Bolsa Campeão:', error);
+    },
+  });
+
+  return unsubscribe;
+}, [currentUser?.uid, userPlayer?.id]);
 
   useEffect(() => {
     const unsubscribePlayers = subscribeToPlayers({
@@ -604,6 +630,46 @@ export default function App() {
     }
   };
 
+const handlePickChampionTeam = async (team: ChampionPickTeam) => {
+  if (!currentUser || !userPlayer) {
+    alert('Faça login com sua conta Google para escolher sua campeã.');
+    return;
+  }
+
+  if (!championPickSettings.enabled || championPickSettings.locked) {
+    alert('A Bolsa Campeão ainda não está aberta para escolhas.');
+    return;
+  }
+
+  if (currentChampionPick) {
+    alert('Você já escolheu sua campeã. Essa escolha não pode ser alterada.');
+    return;
+  }
+
+  const normalizedTeamCode = team.code.trim().toUpperCase();
+
+  if (!championPickSettings.eligibleTeamCodes.includes(normalizedTeamCode)) {
+    alert('Essa seleção não está liberada na Bolsa Campeão.');
+    return;
+  }
+
+  setIsSavingChampionPick(true);
+
+  try {
+    const savedPick = await saveChampionPick(userPlayer, team);
+
+    setCurrentChampionPick(savedPick);
+  } catch (error) {
+    console.error('Erro ao salvar escolha da Bolsa Campeão:', error);
+
+    alert(
+      'Não consegui salvar sua escolha. Confira se a Bolsa está aberta e tente novamente.'
+    );
+  } finally {
+    setIsSavingChampionPick(false);
+  }
+};
+
   const leaderboardPlayers = useMemo(
     () => computeLeaderboard(players, matches),
     [matches, players]
@@ -699,6 +765,10 @@ export default function App() {
   secondPrize={secondPrize}
   participantsCount={paidParticipantsCount}
   championPickSettings={championPickSettings}
+  currentChampionPick={currentChampionPick}
+  isUserLoggedIn={Boolean(currentUser && userPlayer)}
+  isSavingChampionPick={isSavingChampionPick}
+  onPickChampionTeam={handlePickChampionTeam}
   onGoToMatches={() => setActiveTab('matches')}
   onGoToRanking={() => setActiveTab('ranking')}
 />
