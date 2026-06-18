@@ -1,7 +1,12 @@
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
 
 import { db } from '../firebase';
-import type { ChampionPickSettings, ChampionPickTeam } from '../types';
+import type {
+  ChampionPick,
+  ChampionPickSettings,
+  ChampionPickTeam,
+  Player,
+} from '../types';
 
 const CHAMPION_PICK_SETTINGS_REF = doc(db, 'settings', 'championPick');
 
@@ -11,6 +16,7 @@ export const DEFAULT_CHAMPION_PICK_SETTINGS: ChampionPickSettings = {
   bonusPoints: 30,
   championTeamCode: '',
   eligibleTeams: [],
+  eligibleTeamCodes: [],
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,14 +73,46 @@ function normalizeChampionPickSettings(value: unknown): ChampionPickSettings {
   }
 
   const bonusPoints = Math.max(0, cleanNumber(value.bonusPoints, 30));
+  const eligibleTeams = cleanEligibleTeams(value.eligibleTeams);
+
+  const eligibleTeamCodes = Array.isArray(value.eligibleTeamCodes)
+    ? value.eligibleTeamCodes
+        .map((code) => cleanString(code, '', 20).toUpperCase())
+        .filter(Boolean)
+    : eligibleTeams.map((team) => team.code);
 
   return {
     enabled: value.enabled === true,
     locked: value.locked === true,
     bonusPoints,
     championTeamCode: cleanString(value.championTeamCode, '', 20).toUpperCase(),
-    eligibleTeams: cleanEligibleTeams(value.eligibleTeams),
+    eligibleTeams,
+    eligibleTeamCodes,
     updatedAt: cleanString(value.updatedAt, '', 40),
+  };
+}
+
+function normalizeChampionPick(value: unknown): ChampionPick | null {
+  if (!isRecord(value)) return null;
+
+  const playerId = cleanString(value.playerId, '', 128);
+  const playerName = cleanString(value.playerName, '', 128);
+  const teamCode = cleanString(value.teamCode, '', 20).toUpperCase();
+  const teamName = cleanString(value.teamName, '', 100);
+  const teamLogo = cleanString(value.teamLogo, '', 500);
+  const createdAt = cleanString(value.createdAt, '', 40);
+
+  if (!playerId || !playerName || !teamCode || !teamName || !createdAt) {
+    return null;
+  }
+
+  return {
+    playerId,
+    playerName,
+    teamCode,
+    teamName,
+    teamLogo: teamLogo || null,
+    createdAt,
   };
 }
 
@@ -91,14 +129,23 @@ export async function getChampionPickSettings() {
 export async function saveChampionPickSettings(
   settings: ChampionPickSettings
 ): Promise<void> {
+  const eligibleTeams = settings.eligibleTeams.map((team) => ({
+    code: team.code.trim().toUpperCase(),
+    name: team.name.trim(),
+    logo: team.logo?.trim() || null,
+  }));
+
+  const eligibleTeamCodes = eligibleTeams.map((team) => team.code);
+
   await setDoc(
     CHAMPION_PICK_SETTINGS_REF,
     {
       enabled: settings.enabled,
       locked: settings.locked,
       bonusPoints: settings.bonusPoints,
-      championTeamCode: settings.championTeamCode,
-      eligibleTeams: settings.eligibleTeams,
+      championTeamCode: settings.championTeamCode.trim().toUpperCase(),
+      eligibleTeams,
+      eligibleTeamCodes,
       updatedAt: new Date().toISOString(),
     },
     { merge: true }
@@ -126,4 +173,47 @@ export function subscribeToChampionPickSettings({
       onError(error);
     }
   );
+}
+
+export function subscribeToChampionPick({
+  playerId,
+  onData,
+  onError,
+}: {
+  playerId: string;
+  onData: (pick: ChampionPick | null) => void;
+  onError: (error: unknown) => void;
+}) {
+  return onSnapshot(
+    doc(db, 'championPicks', playerId),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onData(null);
+        return;
+      }
+
+      onData(normalizeChampionPick(snapshot.data()));
+    },
+    (error) => {
+      onError(error);
+    }
+  );
+}
+
+export async function saveChampionPick(
+  player: Player,
+  team: ChampionPickTeam
+): Promise<ChampionPick> {
+  const pick: ChampionPick = {
+    playerId: player.id,
+    playerName: player.name,
+    teamCode: team.code.trim().toUpperCase(),
+    teamName: team.name.trim(),
+    teamLogo: team.logo?.trim() || null,
+    createdAt: new Date().toISOString(),
+  };
+
+  await setDoc(doc(db, 'championPicks', player.id), pick);
+
+  return pick;
 }
