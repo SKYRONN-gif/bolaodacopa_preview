@@ -254,6 +254,14 @@ function normalizeMatchText(value?: string | null) {
     .trim();
 
   const aliases: Record<string, string> = {
+
+    // República Tcheca / Czechia
+'rep checa': 'republica tcheca',
+'republica checa': 'republica tcheca',
+'republica tcheca': 'republica tcheca',
+'czechia': 'republica tcheca',
+'czech republic': 'republica tcheca',
+
     // Congo
     'rd congo': 'republica democratica do congo',
     'dr congo': 'republica democratica do congo',
