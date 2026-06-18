@@ -195,6 +195,7 @@ export function HomePage({
             <ChampionPickCard
   bonusPoints={championPickSettings.bonusPoints}
   isOpen={championPickSettings.enabled && !championPickSettings.locked}
+  eligibleTeamsCount={championPickSettings.eligibleTeams.length}
 />
           </div>
         </div>

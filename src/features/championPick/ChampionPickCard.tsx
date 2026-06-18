@@ -3,11 +3,13 @@ import { LockKeyhole, Trophy, TrendingUp } from 'lucide-react';
 interface ChampionPickCardProps {
   bonusPoints?: number;
   isOpen?: boolean;
+  eligibleTeamsCount?: number;
 }
 
 export function ChampionPickCard({
   bonusPoints = 30,
   isOpen = false,
+  eligibleTeamsCount = 0,
 }: ChampionPickCardProps) {
   return (
     <aside className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
@@ -54,7 +56,7 @@ export function ChampionPickCard({
 
         <div className="mt-3 flex items-center justify-between gap-3 text-xs">
           <span className="font-bold text-slate-600">Seleções disponíveis</span>
-          <strong className="text-slate-950">0</strong>
+          <strong className="text-slate-950">{eligibleTeamsCount}</strong>
         </div>
 
         <p className="mt-3 text-[11px] font-semibold leading-relaxed text-slate-500">
