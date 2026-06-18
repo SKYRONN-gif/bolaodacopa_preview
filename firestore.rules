@@ -304,8 +304,10 @@ function championPickSettingsIsValid(data) {
     "bonusPoints",
     "championTeamCode",
     "eligibleTeams",
+    "eligibleTeamCodes",
     "updatedAt"
   ])
+  && (!data.keys().hasAny(["eligibleTeamCodes"]) || (data.eligibleTeamCodes is list && data.eligibleTeamCodes.size() <= 64))
   && (!data.keys().hasAny(["enabled"]) || data.enabled is bool)
   && (!data.keys().hasAny(["locked"]) || data.locked is bool)
   && (!data.keys().hasAny(["bonusPoints"]) || (data.bonusPoints is number && data.bonusPoints >= 0 && data.bonusPoints <= 500))
@@ -322,6 +324,56 @@ match /settings/{settingId} {
     && championPickSettingsIsValid(request.resource.data);
 
   allow delete: if false;
+}
+
+function championPickIsOpen() {
+  return exists(/databases/$(database)/documents/settings/championPick)
+    && get(/databases/$(database)/documents/settings/championPick).data.enabled == true
+    && get(/databases/$(database)/documents/settings/championPick).data.locked == false;
+}
+
+function championTeamIsEligible(teamCode) {
+  return exists(/databases/$(database)/documents/settings/championPick)
+    && get(/databases/$(database)/documents/settings/championPick).data.eligibleTeamCodes is list
+    && teamCode in get(/databases/$(database)/documents/settings/championPick).data.eligibleTeamCodes;
+}
+
+function championPickDataIsValid(data, playerId) {
+  return data.keys().hasOnly([
+    "playerId",
+    "playerName",
+    "teamCode",
+    "teamName",
+    "teamLogo",
+    "createdAt"
+  ])
+  && data.playerId == playerId
+  && isValidId(playerId)
+  && data.playerName is string
+  && data.playerName.size() > 0
+  && data.playerName.size() <= 128
+  && data.teamCode is string
+  && data.teamCode.size() > 0
+  && data.teamCode.size() <= 20
+  && championTeamIsEligible(data.teamCode)
+  && data.teamName is string
+  && data.teamName.size() > 0
+  && data.teamName.size() <= 100
+  && (!data.keys().hasAny(["teamLogo"]) || data.teamLogo == null || (data.teamLogo is string && data.teamLogo.size() <= 500))
+  && data.createdAt is string
+  && data.createdAt.size() <= 40;
+}
+
+match /championPicks/{playerId} {
+  allow read: if true;
+
+  allow create: if isOwner(playerId)
+    && !exists(/databases/$(database)/documents/championPicks/$(playerId))
+    && championPickIsOpen()
+    && championPickDataIsValid(request.resource.data, playerId);
+
+  allow update: if false;
+  allow delete: if isAdmin();
 }
 
     match /{document=**} {

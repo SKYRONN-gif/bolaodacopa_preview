@@ -81,5 +81,15 @@ export interface ChampionPickSettings {
   bonusPoints: number;
   championTeamCode: string;
   eligibleTeams: ChampionPickTeam[];
+  eligibleTeamCodes: string[];
   updatedAt?: string;
+}
+
+export interface ChampionPick {
+  playerId: string;
+  playerName: string;
+  teamCode: string;
+  teamName: string;
+  teamLogo?: string | null;
+  createdAt: string;
 }

@@ -8,7 +8,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { ChampionPickCard } from '../championPick/ChampionPickCard';
-import type { ChampionPickSettings } from '../../types';
+import type { ChampionPick, ChampionPickSettings, ChampionPickTeam } from '../../types';
 
 interface HomePageProps {
   totalPrizePool: number;
@@ -16,6 +16,10 @@ interface HomePageProps {
   secondPrize: number;
   participantsCount: number;
   championPickSettings: ChampionPickSettings;
+  currentChampionPick: ChampionPick | null;
+isUserLoggedIn: boolean;
+isSavingChampionPick: boolean;
+onPickChampionTeam: (team: ChampionPickTeam) => void | Promise<void>;
   onGoToMatches: () => void;
   onGoToRanking: () => void;
 }
@@ -26,6 +30,10 @@ export function HomePage({
   secondPrize,
   participantsCount,
   championPickSettings,
+  currentChampionPick,
+  isUserLoggedIn,
+  isSavingChampionPick,
+  onPickChampionTeam,
   onGoToMatches,
   onGoToRanking,
 }: HomePageProps) {
@@ -195,7 +203,11 @@ export function HomePage({
             <ChampionPickCard
   bonusPoints={championPickSettings.bonusPoints}
   isOpen={championPickSettings.enabled && !championPickSettings.locked}
-  eligibleTeamsCount={championPickSettings.eligibleTeams.length}
+  eligibleTeams={championPickSettings.eligibleTeams}
+  currentPick={currentChampionPick}
+  isUserLoggedIn={isUserLoggedIn}
+  isSavingPick={isSavingChampionPick}
+  onPickTeam={onPickChampionTeam}
 />
           </div>
         </div>
