@@ -296,7 +296,6 @@ service cloud.firestore {
       ) || ownerUpdateIsSafe(playerId);
       allow delete: if isAdmin();
     }
-
 function championPickSettingsIsValid(data) {
   return data.keys().hasOnly([
     "enabled",
@@ -307,12 +306,12 @@ function championPickSettingsIsValid(data) {
     "eligibleTeamCodes",
     "updatedAt"
   ])
-  && (!data.keys().hasAny(["eligibleTeamCodes"]) || (data.eligibleTeamCodes is list && data.eligibleTeamCodes.size() <= 64))
   && (!data.keys().hasAny(["enabled"]) || data.enabled is bool)
   && (!data.keys().hasAny(["locked"]) || data.locked is bool)
   && (!data.keys().hasAny(["bonusPoints"]) || (data.bonusPoints is number && data.bonusPoints >= 0 && data.bonusPoints <= 500))
   && (!data.keys().hasAny(["championTeamCode"]) || (data.championTeamCode is string && data.championTeamCode.size() <= 20))
   && (!data.keys().hasAny(["eligibleTeams"]) || (data.eligibleTeams is list && data.eligibleTeams.size() <= 64))
+  && (!data.keys().hasAny(["eligibleTeamCodes"]) || (data.eligibleTeamCodes is list && data.eligibleTeamCodes.size() <= 64))
   && (!data.keys().hasAny(["updatedAt"]) || (data.updatedAt is string && data.updatedAt.size() <= 40));
 }
 
@@ -338,17 +337,25 @@ function championTeamIsEligible(teamCode) {
     && teamCode in get(/databases/$(database)/documents/settings/championPick).data.eligibleTeamCodes;
 }
 
-function championPickDataIsValid(data, playerId) {
+function championPickEmailMatches(playerEmail) {
+  return verifiedUser()
+    && request.auth.token.email == playerEmail;
+}
+
+function championPickDataIsValid(data, playerEmail) {
   return data.keys().hasOnly([
     "playerId",
+    "playerEmail",
     "playerName",
     "teamCode",
     "teamName",
     "teamLogo",
     "createdAt"
   ])
-  && data.playerId == playerId
-  && isValidId(playerId)
+  && data.playerEmail == playerEmail
+  && data.playerId is string
+  && data.playerId.size() > 0
+  && data.playerId.size() <= 128
   && data.playerName is string
   && data.playerName.size() > 0
   && data.playerName.size() <= 128
@@ -364,21 +371,20 @@ function championPickDataIsValid(data, playerId) {
   && data.createdAt.size() <= 40;
 }
 
-match /championPicks/{playerId} {
+match /championPicks/{playerEmail} {
   allow read: if true;
 
-  allow create: if isOwner(playerId)
-    && !exists(/databases/$(database)/documents/championPicks/$(playerId))
+  allow create: if championPickEmailMatches(playerEmail)
+    && !exists(/databases/$(database)/documents/championPicks/$(playerEmail))
     && championPickIsOpen()
-    && championPickDataIsValid(request.resource.data, playerId);
+    && championPickDataIsValid(request.resource.data, playerEmail);
 
   allow update: if false;
+
   allow delete: if isAdmin();
 }
-
     match /{document=**} {
       allow read, write: if false;
     }
-
   }
 }
