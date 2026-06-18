@@ -87,6 +87,7 @@ export interface ChampionPickSettings {
 
 export interface ChampionPick {
   playerId: string;
+  playerEmail: string;
   playerName: string;
   teamCode: string;
   teamName: string;

@@ -90,6 +90,143 @@ function getNormalizedEmail(email?: string | null) {
   return email?.trim().toLowerCase() || '';
 }
 
+function getPredictionTime(prediction?: Prediction) {
+  const rawDate = prediction?.updatedAt || prediction?.createdAt || '';
+  const timestamp = Date.parse(rawDate);
+
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function shouldUseNextPrediction(
+  currentPrediction?: Prediction,
+  nextPrediction?: Prediction
+) {
+  if (!nextPrediction) return false;
+  if (!currentPrediction) return true;
+
+  const currentTime = getPredictionTime(currentPrediction);
+  const nextTime = getPredictionTime(nextPrediction);
+
+  return nextTime > currentTime;
+}
+
+function mergePredictionMaps(
+  primaryPredictions: Record<string, Prediction> = {},
+  secondaryPredictions: Record<string, Prediction> = {}
+) {
+  const mergedPredictions: Record<string, Prediction> = {
+    ...primaryPredictions,
+  };
+
+  for (const [matchId, secondaryPrediction] of Object.entries(
+    secondaryPredictions
+  )) {
+    if (
+      shouldUseNextPrediction(
+        mergedPredictions[matchId],
+        secondaryPrediction
+      )
+    ) {
+      mergedPredictions[matchId] = secondaryPrediction;
+    }
+  }
+
+  return mergedPredictions;
+}
+
+function predictionMapsAreEqual(
+  firstPredictions: Record<string, Prediction> = {},
+  secondPredictions: Record<string, Prediction> = {}
+) {
+  const firstKeys = Object.keys(firstPredictions);
+  const secondKeys = Object.keys(secondPredictions);
+
+  if (firstKeys.length !== secondKeys.length) return false;
+
+  return firstKeys.every((matchId) => {
+    const first = firstPredictions[matchId];
+    const second = secondPredictions[matchId];
+
+    return (
+      second &&
+      first.scoreA === second.scoreA &&
+      first.scoreB === second.scoreB &&
+      (first.createdAt || '') === (second.createdAt || '') &&
+      (first.updatedAt || '') === (second.updatedAt || '')
+    );
+  });
+}
+
+function mergePlayersKeepingPrimary(
+  primaryPlayer: Player,
+  secondaryPlayer: Player
+): Player {
+  return {
+    ...primaryPlayer,
+    name: primaryPlayer.name || secondaryPlayer.name,
+    avatar: primaryPlayer.avatar || secondaryPlayer.avatar || DEFAULT_AVATAR,
+    email: primaryPlayer.email || secondaryPlayer.email || '',
+    isAdmin: Boolean(primaryPlayer.isAdmin || secondaryPlayer.isAdmin),
+    predictions: mergePredictionMaps(
+      primaryPlayer.predictions,
+      secondaryPlayer.predictions
+    ),
+    manualPointsAdjustment:
+      typeof primaryPlayer.manualPointsAdjustment === 'number'
+        ? primaryPlayer.manualPointsAdjustment
+        : secondaryPlayer.manualPointsAdjustment ?? 0,
+    manualPointsAdjustmentUpdatedAt:
+      primaryPlayer.manualPointsAdjustmentUpdatedAt ||
+      secondaryPlayer.manualPointsAdjustmentUpdatedAt ||
+      '',
+    lastPredictionMatchId:
+      primaryPlayer.lastPredictionMatchId ||
+      secondaryPlayer.lastPredictionMatchId ||
+      '',
+  };
+}
+
+function mergePlayersByEmail(players: Player[]): Player[] {
+  const mergedPlayers: Player[] = [];
+  const emailIndexMap = new Map<string, number>();
+
+  for (const player of players) {
+    const email = getNormalizedEmail(player.email);
+
+    if (!email) {
+      mergedPlayers.push(player);
+      continue;
+    }
+
+    const existingIndex = emailIndexMap.get(email);
+
+    if (existingIndex === undefined) {
+      emailIndexMap.set(email, mergedPlayers.length);
+      mergedPlayers.push(player);
+      continue;
+    }
+
+    const existingPlayer = mergedPlayers[existingIndex];
+
+    const primaryPlayer =
+      existingPlayer.isAdmin || !player.isAdmin ? existingPlayer : player;
+
+    const secondaryPlayer =
+      primaryPlayer.id === existingPlayer.id ? player : existingPlayer;
+
+    mergedPlayers[existingIndex] = mergePlayersKeepingPrimary(
+      primaryPlayer,
+      secondaryPlayer
+    );
+  }
+
+  return mergedPlayers;
+}
+
+function getNormalizedEmail(email?: string | null) {
+  return email?.trim().toLowerCase() || '';
+}
+
 function mergePlayersKeepingPrimary(
   primaryPlayer: Player,
   secondaryPlayer: Player
@@ -313,12 +450,14 @@ const [isSavingChampionPick, setIsSavingChampionPick] = useState(false);
 useEffect(() => {
   setCurrentChampionPick(null);
 
-  if (!currentUser || !userPlayer) {
+  const playerEmail = currentUser?.email || userPlayer?.email || '';
+
+  if (!currentUser || !userPlayer || !playerEmail) {
     return;
   }
 
   const unsubscribe = subscribeToChampionPick({
-    playerId: userPlayer.id,
+    playerEmail,
     onData: setCurrentChampionPick,
     onError: (error) => {
       console.error('Erro ao carregar escolha da Bolsa Campeão:', error);
@@ -327,7 +466,7 @@ useEffect(() => {
   });
 
   return unsubscribe;
-}, [currentUser?.uid, userPlayer?.id]);
+}, [currentUser?.email, userPlayer?.email]);
 
   useEffect(() => {
     const unsubscribePlayers = subscribeToPlayers({
@@ -380,7 +519,7 @@ useEffect(() => {
     return () => window.clearTimeout(timer);
   }, [isLoading]);
 
- useEffect(() => {
+useEffect(() => {
   if (!currentUser) {
     setUserPlayer(null);
     return;
@@ -396,20 +535,27 @@ useEffect(() => {
   );
 
   const playersWithSameEmail = players.filter((player) =>
-    emailsMatch(player.email, currentUser.email)
+    emailsMatch(player.email, userEmail)
   );
 
   const basePlayer: Player =
     playerByUid || createPlayerFromFirebaseUser(currentUser);
 
+  const basePlayerWithEmail: Player = {
+    ...basePlayer,
+    email: basePlayer.email || userEmail,
+    isAdmin: basePlayer.isAdmin || false,
+  };
+
   const mergedPlayer = playersWithSameEmail.reduce<Player>(
-    (currentPlayer, duplicatedPlayer) =>
-      mergePlayersKeepingPrimary(currentPlayer, duplicatedPlayer),
-    {
-      ...basePlayer,
-      email: basePlayer.email || userEmail,
-      isAdmin: basePlayer.isAdmin || false,
-    }
+    (currentPlayer, duplicatedPlayer) => {
+      if (duplicatedPlayer.id === currentPlayer.id) {
+        return currentPlayer;
+      }
+
+      return mergePlayersKeepingPrimary(currentPlayer, duplicatedPlayer);
+    },
+    basePlayerWithEmail
   );
 
   setUserPlayer(mergedPlayer);
@@ -418,25 +564,24 @@ useEffect(() => {
 
   const shouldCreateCurrentPlayer = !playerByUid;
 
-  const shouldImportPredictions = playersWithSameEmail.some(
-    (duplicatedPlayer) =>
-      duplicatedPlayer.id !== currentUser.uid &&
-      hasPredictionsToImport(basePlayer, duplicatedPlayer)
-  );
+  const shouldUpdatePredictions =
+    !playerByUid ||
+    !predictionMapsAreEqual(playerByUid.predictions, mergedPlayer.predictions);
 
   const shouldUpdateAdminFlag =
-    Boolean(mergedPlayer.isAdmin) !== Boolean(playerByUid?.isAdmin);
+    Boolean(playerByUid?.isAdmin) !== Boolean(mergedPlayer.isAdmin);
 
-  if (shouldCreateCurrentPlayer || shouldImportPredictions || shouldUpdateAdminFlag) {
+  const shouldUpdateEmail = !playerByUid?.email && Boolean(userEmail);
+
+  if (
+    shouldCreateCurrentPlayer ||
+    shouldUpdatePredictions ||
+    shouldUpdateAdminFlag ||
+    shouldUpdateEmail
+  ) {
     savePlayer(mergedPlayer).catch((error) => {
       console.warn('Erro ao mesclar perfil duplicado por e-mail:', error);
       setIsOfflineMode(true);
-    });
-  }
-
-  if (!playerByUid?.email && userEmail && playerByUid?.id === currentUser.uid) {
-    savePlayerEmail(playerByUid.id, userEmail).catch((error) => {
-      console.warn('Erro ao vincular email ao perfil no Firestore:', error);
     });
   }
 }, [currentUser, hasPlayersSnapshotResolved, isLoadingPlayers, players]);
@@ -744,10 +889,15 @@ const handlePickChampionTeam = async (team: ChampionPickTeam) => {
     return;
   }
 
+  const playerWithEmail: Player = {
+    ...userPlayer,
+    email: userPlayer.email || getUserEmail(currentUser),
+  };
+
   setIsSavingChampionPick(true);
 
   try {
-    const savedPick = await saveChampionPick(userPlayer, team);
+    const savedPick = await saveChampionPick(playerWithEmail, team);
 
     setCurrentChampionPick(savedPick);
   } catch (error) {
@@ -775,6 +925,7 @@ const paidPlayers = useMemo(
   () => getPaidParticipants(uniquePlayers),
   [uniquePlayers]
 );
+
   const paidParticipantsCount = paidPlayers.length;
   const { totalPrizePool, firstPrize, secondPrize } = useMemo(
     () => calculatePrizes(paidParticipantsCount),

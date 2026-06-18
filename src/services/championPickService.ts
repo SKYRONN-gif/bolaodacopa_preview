@@ -67,28 +67,29 @@ function cleanEligibleTeams(value: unknown): ChampionPickTeam[] {
     .slice(0, 64);
 }
 
-function normalizeChampionPickSettings(value: unknown): ChampionPickSettings {
-  if (!isRecord(value)) {
-    return DEFAULT_CHAMPION_PICK_SETTINGS;
+function normalizeChampionPick(value: unknown): ChampionPick | null {
+  if (!isRecord(value)) return null;
+
+  const playerId = cleanString(value.playerId, '', 128);
+  const playerEmail = cleanString(value.playerEmail, '', 160).toLowerCase();
+  const playerName = cleanString(value.playerName, '', 128);
+  const teamCode = cleanString(value.teamCode, '', 20).toUpperCase();
+  const teamName = cleanString(value.teamName, '', 100);
+  const teamLogo = cleanString(value.teamLogo, '', 500);
+  const createdAt = cleanString(value.createdAt, '', 40);
+
+  if (!playerId || !playerEmail || !playerName || !teamCode || !teamName || !createdAt) {
+    return null;
   }
 
-  const bonusPoints = Math.max(0, cleanNumber(value.bonusPoints, 30));
-  const eligibleTeams = cleanEligibleTeams(value.eligibleTeams);
-
-  const eligibleTeamCodes = Array.isArray(value.eligibleTeamCodes)
-    ? value.eligibleTeamCodes
-        .map((code) => cleanString(code, '', 20).toUpperCase())
-        .filter(Boolean)
-    : eligibleTeams.map((team) => team.code);
-
   return {
-    enabled: value.enabled === true,
-    locked: value.locked === true,
-    bonusPoints,
-    championTeamCode: cleanString(value.championTeamCode, '', 20).toUpperCase(),
-    eligibleTeams,
-    eligibleTeamCodes,
-    updatedAt: cleanString(value.updatedAt, '', 40),
+    playerId,
+    playerEmail,
+    playerName,
+    teamCode,
+    teamName,
+    teamLogo: teamLogo || null,
+    createdAt,
   };
 }
 
@@ -176,16 +177,25 @@ export function subscribeToChampionPickSettings({
 }
 
 export function subscribeToChampionPick({
-  playerId,
+  playerEmail,
   onData,
   onError,
 }: {
-  playerId: string;
+  playerEmail: string;
   onData: (pick: ChampionPick | null) => void;
   onError: (error: unknown) => void;
 }) {
+  let pickDocumentId = '';
+
+  try {
+    pickDocumentId = getChampionPickDocumentId(playerEmail);
+  } catch (error) {
+    onData(null);
+    return () => {};
+  }
+
   return onSnapshot(
-    doc(db, 'championPicks', playerId),
+    doc(db, 'championPicks', pickDocumentId),
     (snapshot) => {
       if (!snapshot.exists()) {
         onData(null);
@@ -195,6 +205,7 @@ export function subscribeToChampionPick({
       onData(normalizeChampionPick(snapshot.data()));
     },
     (error) => {
+      onData(null);
       onError(error);
     }
   );
@@ -204,8 +215,11 @@ export async function saveChampionPick(
   player: Player,
   team: ChampionPickTeam
 ): Promise<ChampionPick> {
+  const playerEmail = getChampionPickDocumentId(player.email);
+
   const pick: ChampionPick = {
     playerId: player.id,
+    playerEmail,
     playerName: player.name,
     teamCode: team.code.trim().toUpperCase(),
     teamName: team.name.trim(),
@@ -213,7 +227,17 @@ export async function saveChampionPick(
     createdAt: new Date().toISOString(),
   };
 
-  await setDoc(doc(db, 'championPicks', player.id), pick);
+  await setDoc(doc(db, 'championPicks', playerEmail), pick);
 
   return pick;
+}
+
+function getChampionPickDocumentId(playerEmail?: string | null) {
+  const normalizedEmail = playerEmail?.trim().toLowerCase() || '';
+
+  if (!normalizedEmail) {
+    throw new Error('champion-pick-email-required');
+  }
+
+  return normalizedEmail;
 }
