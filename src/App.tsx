@@ -697,10 +697,10 @@ export default function App() {
   totalPrizePool={totalPrizePool}
   firstPrize={firstPrize}
   secondPrize={secondPrize}
-  participantsCount={paidPlayersCount}
+  participantsCount={paidParticipantsCount}
   championPickSettings={championPickSettings}
- onGoToMatches={() => setActiveTab('matches')}
-onGoToRanking={() => setActiveTab('ranking')}
+  onGoToMatches={() => setActiveTab('matches')}
+  onGoToRanking={() => setActiveTab('ranking')}
 />
         )}
 
