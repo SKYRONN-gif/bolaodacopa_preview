@@ -1,4 +1,4 @@
-import { Calendar, Info, Share2 } from 'lucide-react';
+import { Calendar, CheckCircle2, Info, Share2, AlertTriangle, Loader2 } from 'lucide-react';
 
 import { getPredictionLockMessage, isPredictionLocked } from '../../domain/rules';
 import { calculatePredictionPoints } from '../../domain/scoring';
@@ -13,15 +13,35 @@ interface EditedPrediction {
   scoreB: string;
 }
 
+export type PredictionSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 interface MatchCardProps {
   match: Match;
   userPlayer: Player;
   editedPrediction?: EditedPrediction;
   canEdit: boolean;
+  saveStatus?: PredictionSaveStatus;
   onInputChange: (matchId: string, side: PredictionSide, value: string) => void;
   onSavePrediction: (matchId: string) => void;
   onShareMatchWhatsApp: (match: Match) => void;
   onOpenDetails: (match: Match) => void;
+}
+
+function formatPredictionDate(value?: string) {
+  if (!value) return '';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export function MatchCard({
@@ -29,6 +49,7 @@ export function MatchCard({
   userPlayer,
   editedPrediction,
   canEdit,
+  saveStatus = 'idle',
   onInputChange,
   onSavePrediction,
   onShareMatchWhatsApp,
@@ -50,13 +71,26 @@ export function MatchCard({
   const pointsType =
     predictionResult.type === 'unplayed' ? null : predictionResult.type;
 
-  const isSaveVisible =
-    canEdit &&
-    !isLocked &&
-    ((editedPrediction?.scoreA !== undefined &&
-      editedPrediction.scoreA !== (userPrediction?.scoreA?.toString() ?? '')) ||
-      (editedPrediction?.scoreB !== undefined &&
-        editedPrediction.scoreB !== (userPrediction?.scoreB?.toString() ?? '')));
+  const hasEditedScoreA =
+    editedPrediction?.scoreA !== undefined &&
+    editedPrediction.scoreA !== (userPrediction?.scoreA?.toString() ?? '');
+
+  const hasEditedScoreB =
+    editedPrediction?.scoreB !== undefined &&
+    editedPrediction.scoreB !== (userPrediction?.scoreB?.toString() ?? '');
+
+  const hasUnsavedChanges = hasEditedScoreA || hasEditedScoreB;
+
+  const isSaveVisible = canEdit && !isLocked && hasUnsavedChanges;
+
+  const predictionSavedAt = formatPredictionDate(
+    userPrediction?.updatedAt || userPrediction?.createdAt
+  );
+
+  const hasSavedPrediction =
+    userPrediction &&
+    typeof userPrediction.scoreA === 'number' &&
+    typeof userPrediction.scoreB === 'number';
 
   return (
     <article
@@ -114,7 +148,7 @@ export function MatchCard({
           <PredictionInputs
             scoreA={currentA}
             scoreB={currentB}
-            disabled={isLocked || !canEdit}
+            disabled={isLocked || !canEdit || saveStatus === 'saving'}
             canEdit={canEdit}
             isLocked={isLocked}
             lockMessage={lockMessage}
@@ -122,6 +156,56 @@ export function MatchCard({
             onChange={(side, value) => onInputChange(match.id, side, value)}
             onSave={() => onSavePrediction(match.id)}
           />
+
+          <div className="mt-2 min-h-[34px] text-center">
+            {saveStatus === 'saving' && (
+              <p className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700 border border-sky-100">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Salvando palpite...
+              </p>
+            )}
+
+            {saveStatus === 'saved' && (
+              <p className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 border border-emerald-100">
+                <CheckCircle2 className="h-3 w-3" />
+                Palpite salvo
+              </p>
+            )}
+
+            {saveStatus === 'error' && (
+              <p className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-bold text-red-700 border border-red-100">
+                <AlertTriangle className="h-3 w-3" />
+                Erro ao salvar. Tente novamente.
+              </p>
+            )}
+
+            {saveStatus === 'idle' && hasUnsavedChanges && !isLocked && (
+              <p className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700 border border-amber-100">
+                <AlertTriangle className="h-3 w-3" />
+                Alteração não salva
+              </p>
+            )}
+
+            {saveStatus === 'idle' &&
+              !hasUnsavedChanges &&
+              hasSavedPrediction &&
+              predictionSavedAt && (
+                <p className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 border border-emerald-100">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Atualizado em {predictionSavedAt}
+                </p>
+              )}
+
+            {saveStatus === 'idle' &&
+              !hasUnsavedChanges &&
+              !hasSavedPrediction &&
+              !isLocked &&
+              canEdit && (
+                <p className="text-[10px] font-semibold text-slate-400">
+                  Você pode salvar ou alterar até o início da partida.
+                </p>
+              )}
+          </div>
         </div>
 
         <div className="col-span-2 flex flex-col items-center justify-center text-center">

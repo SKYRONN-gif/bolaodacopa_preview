@@ -8,7 +8,10 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Match, Player } from '../types';
 import { BulkPredictionActions } from '../features/matches/BulkPredictionActions';
-import { MatchCard } from '../features/matches/MatchCard';
+import {
+  MatchCard,
+  type PredictionSaveStatus,
+} from '../features/matches/MatchCard';
 import { MatchDetailsModal } from '../features/matches/MatchDetailsModal';
 import { MatchFilterTabs } from '../features/matches/MatchFilterTabs';
 import {
@@ -55,6 +58,10 @@ export function MatchesList({
     null
   );
 
+  const [predictionSaveStatuses, setPredictionSaveStatuses] = useState<
+  Record<string, PredictionSaveStatus>
+>({});
+
   const [toast, setToast] = useState<{
     message: string;
     type: 'success' | 'info' | 'error';
@@ -71,12 +78,24 @@ export function MatchesList({
     }, 4000);
   };
 
+  const setPredictionSaveStatus = (
+  matchId: string,
+  status: PredictionSaveStatus
+) => {
+  setPredictionSaveStatuses((currentStatuses) => ({
+    ...currentStatuses,
+    [matchId]: status,
+  }));
+};
+
   const handleInputChange = (
     matchId: string,
     side: PredictionSide,
     value: string
   ) => {
     const cleanValue = value.replace(/[^0-9]/g, '').slice(0, 2);
+
+    setPredictionSaveStatus(matchId, 'idle');
 
     setEditedPreds((currentPredictions) => ({
       ...currentPredictions,
@@ -97,41 +116,38 @@ export function MatchesList({
     }));
   };
 
-  const handleSavePrediction = async (matchId: string) => {
-    if (!canEdit) {
-      triggerToast('Entre com sua conta Google para salvar seus palpites.', 'info');
-      return;
-    }
+const handleSavePrediction = async (matchId: string) => {
+  if (!canEdit) {
+    triggerToast('Entre com sua conta Google para salvar seus palpites.', 'info');
+    return;
+  }
 
-    const targetMatch = matches.find((match) => match.id === matchId);
+  const targetMatch = matches.find((match) => match.id === matchId);
 
-    if (!targetMatch) {
-      triggerToast('Partida não encontrada.', 'info');
-      return;
-    }
+  if (!targetMatch) {
+    triggerToast('Partida não encontrada.', 'info');
+    return;
+  }
 
-    if (isPredictionLocked(targetMatch)) {
-      triggerToast(getPredictionLockMessage(targetMatch), 'info');
-      return;
-    }
+  if (isPredictionLocked(targetMatch)) {
+    triggerToast(getPredictionLockMessage(targetMatch), 'info');
+    return;
+  }
 
-    const inputState = editedPreds[matchId];
+  const inputState = editedPreds[matchId];
 
-    if (!inputState) {
-      triggerToast('Altere o placar antes de salvar.', 'info');
-      return;
-    }
+  if (!inputState) {
+    triggerToast('Altere o placar antes de salvar.', 'info');
+    return;
+  }
 
-    const scoreA = inputState.scoreA === '' ? 0 : Number(inputState.scoreA);
-    const scoreB = inputState.scoreB === '' ? 0 : Number(inputState.scoreB);
+  const scoreA = inputState.scoreA === '' ? 0 : Number(inputState.scoreA);
+  const scoreB = inputState.scoreB === '' ? 0 : Number(inputState.scoreB);
 
-    try {
-      await onUpdatePrediction(matchId, scoreA, scoreB);
-    } catch (error) {
-      console.warn('Erro ao confirmar palpite:', error);
-      triggerToast('Não foi possível salvar no banco. Tente novamente.', 'error');
-      return;
-    }
+  setPredictionSaveStatus(matchId, 'saving');
+
+  try {
+    await onUpdatePrediction(matchId, scoreA, scoreB);
 
     setEditedPreds((currentPredictions) => {
       const nextPredictions = { ...currentPredictions };
@@ -139,9 +155,25 @@ export function MatchesList({
       return nextPredictions;
     });
 
-    triggerToast('Palpite salvo com sucesso.', 'success');
-  };
+    setPredictionSaveStatus(matchId, 'saved');
 
+    window.setTimeout(() => {
+      setPredictionSaveStatus(matchId, 'idle');
+    }, 2500);
+
+    triggerToast('Palpite salvo com sucesso.', 'success');
+  } catch (error) {
+    console.warn('Erro ao confirmar palpite:', error);
+
+    setPredictionSaveStatus(matchId, 'error');
+
+    window.setTimeout(() => {
+      setPredictionSaveStatus(matchId, 'idle');
+    }, 4000);
+
+    triggerToast('Não foi possível salvar no banco. Tente novamente.', 'error');
+  }
+};
   const handleShareMatchWhatsApp = (match: Match) => {
     const text = buildSinglePredictionWhatsAppText({
       match,
@@ -276,16 +308,17 @@ export function MatchesList({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {visibleMatches.map((match) => (
               <MatchCard
-                key={match.id}
-                match={match}
-                userPlayer={userPlayer}
-                editedPrediction={editedPreds[match.id]}
-                canEdit={canEdit}
-                onInputChange={handleInputChange}
-                onSavePrediction={handleSavePrediction}
-                onShareMatchWhatsApp={handleShareMatchWhatsApp}
-                onOpenDetails={setSelectedMatchDetails}
-              />
+  key={match.id}
+  match={match}
+  userPlayer={userPlayer}
+  editedPrediction={editedPreds[match.id]}
+  canEdit={canEdit}
+  saveStatus={predictionSaveStatuses[match.id] || 'idle'}
+  onInputChange={handleInputChange}
+  onSavePrediction={handleSavePrediction}
+  onShareMatchWhatsApp={handleShareMatchWhatsApp}
+  onOpenDetails={setSelectedMatchDetails}
+/>
             ))}
           </div>
 
