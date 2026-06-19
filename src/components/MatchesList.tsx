@@ -51,7 +51,7 @@ export function MatchesList({
   canEdit,
   onUpdatePrediction,
 }: MatchesListProps) {
-  const [activeFilter, setActiveFilter] = useState<MatchFilter>('all');
+  const [activeFilter, setActiveFilter] = useState<MatchFilter>('open');
   const [currentPage, setCurrentPage] = useState(1);
   const [editedPreds, setEditedPreds] = useState<EditedPredictions>({});
   const [selectedMatchDetails, setSelectedMatchDetails] = useState<Match | null>(
@@ -220,15 +220,23 @@ const handleSavePrediction = async (matchId: string) => {
   };
 
   const filteredMatches = useMemo(
-    () =>
-      matches.filter((match) => {
-        if (activeFilter === 'scheduled') return match.status === 'scheduled';
-        if (activeFilter === 'finished') return match.status === 'finished';
+  () =>
+    matches.filter((match) => {
+      const hasPrediction = Boolean(userPlayer.predictions[match.id]);
+      const isLocked = isPredictionLocked(match);
+      const isFinished = match.status === 'finished';
+      const isOpen = match.status === 'scheduled' && !isLocked;
 
-        return true;
-      }),
-    [activeFilter, matches]
-  );
+      if (activeFilter === 'open') return isOpen;
+      if (activeFilter === 'predicted') return hasPrediction;
+      if (activeFilter === 'missing') return !hasPrediction;
+      if (activeFilter === 'locked') return isLocked && !isFinished;
+      if (activeFilter === 'finished') return isFinished;
+
+      return true;
+    }),
+  [activeFilter, matches, userPlayer.predictions]
+);
 
   const totalPages = Math.max(
     1,
@@ -283,10 +291,11 @@ const handleSavePrediction = async (matchId: string) => {
 
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
         <MatchFilterTabs
-          matches={matches}
-          activeFilter={activeFilter}
-          onChangeFilter={setActiveFilter}
-        />
+  matches={matches}
+  userPlayer={userPlayer}
+  activeFilter={activeFilter}
+  onChangeFilter={setActiveFilter}
+/>
 
         <BulkPredictionActions
           onCopyAll={handleCopyClipboard}
@@ -301,8 +310,9 @@ const handleSavePrediction = async (matchId: string) => {
         </div>
       ) : filteredMatches.length === 0 ? (
         <div className="app-card app-card-padding text-sm text-slate-600">
-          Nenhuma partida encontrada para este filtro.
-        </div>
+  Nenhuma partida encontrada para este filtro. Use “Todos” para ver a lista
+  completa.
+</div>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
