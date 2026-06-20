@@ -1,9 +1,3 @@
-export type MatchFilter =
-  | 'open'
-  | 'all'
-  | 'predicted'
-  | 'missing'
-  | 'locked'
-  | 'finished';
+export type { MatchFilter } from '../../domain/matchFilters';
 
 export type PredictionSide = 'A' | 'B';

@@ -9,10 +9,12 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "test:unit": "tsx scripts/unitRegressionTest.tsx",
+    "test:migration": "tsx scripts/migrationConsolidationTest.ts",
     "test:volume": "tsx scripts/dataVolumeTest.ts",
     "test:resilience": "tsx scripts/dataResilienceTest.ts",
     "test:browsers": "tsx scripts/browserSmokeTest.ts",
-    "test:all": "npm run test:volume && npm run test:resilience && npm run lint && npm run build",
+    "test:all": "tsx scripts/unitRegressionTest.tsx && tsx scripts/migrationConsolidationTest.ts && tsx scripts/dataVolumeTest.ts && tsx scripts/dataResilienceTest.ts && tsc --noEmit && vite build",
     "deploy:rules": "npx firebase-tools deploy --only firestore:rules --project testebolao2"
   },
   "dependencies": {

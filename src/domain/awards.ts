@@ -141,7 +141,7 @@ export function buildAwards(players: Player[], matches: Match[]): Award[] {
     getAlmostHits(player, finishedMatches)
   );
 
-  return [
+  const awards: Award[] = [
     {
       type: 'exact',
       title: 'Maior acerto',
@@ -178,7 +178,9 @@ export function buildAwards(players: Player[], matches: Match[]): Award[] {
         : 'Sem vencedor',
       winners: almostWinners,
     },
-  ].filter((award) => award.winners.length > 0);
+  ];
+
+  return awards.filter((award) => award.winners.length > 0);
 }
 
 export function getAwardWinnerText(award: Award) {

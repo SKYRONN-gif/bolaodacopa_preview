@@ -19,6 +19,7 @@ import {
   buildAllPredictionsWhatsAppText,
   buildSinglePredictionWhatsAppText,
 } from '../features/matches/shareText';
+import { getFilteredMatches } from '../domain/matchFilters';
 import { getPredictionLockMessage, isPredictionLocked } from '../domain/rules';
 import { MatchFilter, PredictionSide } from '../features/matches/types';
 
@@ -220,23 +221,9 @@ const handleSavePrediction = async (matchId: string) => {
   };
 
   const filteredMatches = useMemo(
-  () =>
-    matches.filter((match) => {
-      const hasPrediction = Boolean(userPlayer.predictions[match.id]);
-      const isLocked = isPredictionLocked(match);
-      const isFinished = match.status === 'finished';
-      const isOpen = match.status === 'scheduled' && !isLocked;
-
-      if (activeFilter === 'open') return isOpen;
-      if (activeFilter === 'predicted') return hasPrediction;
-      if (activeFilter === 'missing') return !hasPrediction;
-      if (activeFilter === 'locked') return isLocked && !isFinished;
-      if (activeFilter === 'finished') return isFinished;
-
-      return true;
-    }),
-  [activeFilter, matches, userPlayer.predictions]
-);
+    () => getFilteredMatches(matches, userPlayer, activeFilter),
+    [activeFilter, matches, userPlayer]
+  );
 
   const totalPages = Math.max(
     1,

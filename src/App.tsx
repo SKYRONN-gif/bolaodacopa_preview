@@ -22,6 +22,11 @@ import { DEFAULT_AVATAR } from './config/avatars';
 import { INITIAL_MATCHES } from './data';
 import { calculatePrizes, getPaidParticipants } from './domain/finance';
 import { sortMatchesBySchedule } from './domain/matches';
+import {
+  mergePlayersByEmail,
+  mergePlayersKeepingPrimary,
+  predictionMapsAreEqual,
+} from './domain/playerMerge';
 import { computeLeaderboard } from './domain/scoring';
 import { isPredictionLocked } from './domain/rules';
 import { HomePage } from './features/home/HomePage';
@@ -83,143 +88,6 @@ function emailsMatch(first?: string | null, second?: string | null) {
   if (!first || !second) return false;
 
   return first.trim().toLowerCase() === second.trim().toLowerCase();
-}
-
-function getNormalizedEmail(email?: string | null) {
-  return email?.trim().toLowerCase() || '';
-}
-
-function getPredictionTime(prediction?: Prediction) {
-  const rawDate = prediction?.updatedAt || prediction?.createdAt || '';
-  const timestamp = Date.parse(rawDate);
-
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function shouldUseNextPrediction(
-  currentPrediction?: Prediction,
-  nextPrediction?: Prediction
-) {
-  if (!nextPrediction) return false;
-  if (!currentPrediction) return true;
-
-  const currentTime = getPredictionTime(currentPrediction);
-  const nextTime = getPredictionTime(nextPrediction);
-
-  return nextTime > currentTime;
-}
-
-function mergePredictionMaps(
-  primaryPredictions: Record<string, Prediction> = {},
-  secondaryPredictions: Record<string, Prediction> = {}
-) {
-  const mergedPredictions: Record<string, Prediction> = {
-    ...primaryPredictions,
-  };
-
-  for (const [matchId, secondaryPrediction] of Object.entries(
-    secondaryPredictions
-  )) {
-    if (
-      shouldUseNextPrediction(
-        mergedPredictions[matchId],
-        secondaryPrediction
-      )
-    ) {
-      mergedPredictions[matchId] = secondaryPrediction;
-    }
-  }
-
-  return mergedPredictions;
-}
-
-function predictionMapsAreEqual(
-  firstPredictions: Record<string, Prediction> = {},
-  secondPredictions: Record<string, Prediction> = {}
-) {
-  const firstKeys = Object.keys(firstPredictions);
-  const secondKeys = Object.keys(secondPredictions);
-
-  if (firstKeys.length !== secondKeys.length) return false;
-
-  return firstKeys.every((matchId) => {
-    const first = firstPredictions[matchId];
-    const second = secondPredictions[matchId];
-
-    return (
-      second &&
-      first.scoreA === second.scoreA &&
-      first.scoreB === second.scoreB &&
-      (first.createdAt || '') === (second.createdAt || '') &&
-      (first.updatedAt || '') === (second.updatedAt || '')
-    );
-  });
-}
-
-function mergePlayersKeepingPrimary(
-  primaryPlayer: Player,
-  secondaryPlayer: Player
-): Player {
-  return {
-    ...primaryPlayer,
-    name: primaryPlayer.name || secondaryPlayer.name,
-    avatar: primaryPlayer.avatar || secondaryPlayer.avatar || DEFAULT_AVATAR,
-    email: primaryPlayer.email || secondaryPlayer.email || '',
-    isAdmin: Boolean(primaryPlayer.isAdmin || secondaryPlayer.isAdmin),
-    predictions: mergePredictionMaps(
-      primaryPlayer.predictions,
-      secondaryPlayer.predictions
-    ),
-    manualPointsAdjustment:
-      typeof primaryPlayer.manualPointsAdjustment === 'number'
-        ? primaryPlayer.manualPointsAdjustment
-        : secondaryPlayer.manualPointsAdjustment ?? 0,
-    manualPointsAdjustmentUpdatedAt:
-      primaryPlayer.manualPointsAdjustmentUpdatedAt ||
-      secondaryPlayer.manualPointsAdjustmentUpdatedAt ||
-      '',
-    lastPredictionMatchId:
-      primaryPlayer.lastPredictionMatchId ||
-      secondaryPlayer.lastPredictionMatchId ||
-      '',
-  };
-}
-
-function mergePlayersByEmail(players: Player[]): Player[] {
-  const mergedPlayers: Player[] = [];
-  const emailIndexMap = new Map<string, number>();
-
-  for (const player of players) {
-    const email = getNormalizedEmail(player.email);
-
-    if (!email) {
-      mergedPlayers.push(player);
-      continue;
-    }
-
-    const existingIndex = emailIndexMap.get(email);
-
-    if (existingIndex === undefined) {
-      emailIndexMap.set(email, mergedPlayers.length);
-      mergedPlayers.push(player);
-      continue;
-    }
-
-    const existingPlayer = mergedPlayers[existingIndex];
-
-    const primaryPlayer =
-      existingPlayer.isAdmin || !player.isAdmin ? existingPlayer : player;
-
-    const secondaryPlayer =
-      primaryPlayer.id === existingPlayer.id ? player : existingPlayer;
-
-    mergedPlayers[existingIndex] = mergePlayersKeepingPrimary(
-      primaryPlayer,
-      secondaryPlayer
-    );
-  }
-
-  return mergedPlayers;
 }
 
 function upsertPlayer(players: Player[], nextPlayer: Player): Player[] {
@@ -475,7 +343,9 @@ useEffect(() => {
         return currentPlayer;
       }
 
-      return mergePlayersKeepingPrimary(currentPlayer, duplicatedPlayer);
+      return mergePlayersKeepingPrimary(currentPlayer, duplicatedPlayer, {
+        fallbackAvatar: DEFAULT_AVATAR,
+      });
     },
     basePlayerWithEmail
   );
@@ -832,7 +702,7 @@ const handlePickChampionTeam = async (team: ChampionPickTeam) => {
 };
 
 const uniquePlayers = useMemo(
-  () => mergePlayersByEmail(players),
+  () => mergePlayersByEmail(players, { fallbackAvatar: DEFAULT_AVATAR }),
   [players]
 );
 

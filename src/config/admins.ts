@@ -9,9 +9,15 @@ function parseAdminEmails(value?: string): string[] {
     .filter(Boolean);
 }
 
+function getEnvValue(key: string) {
+  const viteEnv = import.meta.env as Record<string, string | undefined> | undefined;
+
+  return viteEnv?.[key] || process.env[key];
+}
+
 export const ADMIN_EMAILS = [
-  ...parseAdminEmails(import.meta.env.VITE_ADMIN_EMAILS),
-  ...parseAdminEmails(import.meta.env.VITE_ADMIN_EMAIL),
+  ...parseAdminEmails(getEnvValue('VITE_ADMIN_EMAILS')),
+  ...parseAdminEmails(getEnvValue('VITE_ADMIN_EMAIL')),
   ...DEFAULT_ADMIN_EMAILS,
 ].filter((email, index, emails) => emails.indexOf(email) === index);
 

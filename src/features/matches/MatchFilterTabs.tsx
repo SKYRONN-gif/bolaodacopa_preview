@@ -1,5 +1,5 @@
 import { Match, Player } from '../../types';
-import { isPredictionLocked } from '../../domain/rules';
+import { getMatchFilterCounts } from '../../domain/matchFilters';
 import { MatchFilter } from './types';
 
 interface MatchFilterTabsProps {
@@ -15,30 +15,7 @@ export function MatchFilterTabs({
   activeFilter,
   onChangeFilter,
 }: MatchFilterTabsProps) {
-  const openCount = matches.filter((match) => {
-    return match.status === 'scheduled' && !isPredictionLocked(match);
-  }).length;
-
-  const missingCount = matches.filter((match) => {
-    const hasPrediction = Boolean(userPlayer.predictions[match.id]);
-    const isOpen = match.status === 'scheduled' && !isPredictionLocked(match);
-
-    return isOpen && !hasPrediction;
-  }).length;
-
-  const predictedCount = matches.filter((match) => {
-    return Boolean(userPlayer.predictions[match.id]);
-  }).length;
-
-  const lockedCount = matches.filter((match) => {
-    const isFinished = match.status === 'finished';
-
-    return isPredictionLocked(match) && !isFinished;
-  }).length;
-
-  const finishedCount = matches.filter((match) => {
-    return match.status === 'finished';
-  }).length;
+  const counts = getMatchFilterCounts(matches, userPlayer);
 
   const items: Array<{
     id: MatchFilter;
@@ -48,32 +25,32 @@ export function MatchFilterTabs({
     {
       id: 'open',
       label: 'Abertos',
-      count: openCount,
+      count: counts.open,
     },
     {
       id: 'missing',
       label: 'Sem palpite',
-      count: missingCount,
+      count: counts.missing,
     },
     {
       id: 'predicted',
       label: 'Meus palpites',
-      count: predictedCount,
+      count: counts.predicted,
     },
     {
       id: 'locked',
       label: 'Travados',
-      count: lockedCount,
+      count: counts.locked,
     },
     {
       id: 'finished',
       label: 'Finalizados',
-      count: finishedCount,
+      count: counts.finished,
     },
     {
       id: 'all',
       label: 'Todos',
-      count: matches.length,
+      count: counts.all,
     },
   ];
 
