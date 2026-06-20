@@ -8,7 +8,10 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 
+import { mergePlayersKeepingPrimary } from '../domain/playerMerge';
 import { db } from '../firebase';
+import type { Player } from '../types';
+import { normalizePlayerDocument } from './firestoreNormalizers';
 
 const OLD_FIREBASE_APP_NAME = 'old-bolao-production';
 
@@ -153,7 +156,8 @@ async function writeCollectionDocsInBatches(
       removeUndefinedFields({
         ...item.data,
         id: item.data.id || item.id,
-      })
+      }),
+      { merge: true }
     );
 
     pendingWrites++;
@@ -170,13 +174,45 @@ async function writeCollectionDocsInBatches(
   }
 }
 
+async function loadCurrentPlayersById() {
+  const playersSnapshot = await getDocs(collection(db, 'players'));
+  const playersById = new Map<string, Player>();
+
+  playersSnapshot.forEach((document) => {
+    const player = normalizePlayerDocument(document.id, document.data());
+
+    if (player) {
+      playersById.set(document.id, player);
+    }
+  });
+
+  return playersById;
+}
+
+function mergeLegacyPlayerIntoCurrent(
+  playerId: string,
+  legacyData: Record<string, unknown>,
+  currentPlayersById: Map<string, Player>
+): Record<string, unknown> {
+  const legacyPlayer = normalizePlayerDocument(playerId, legacyData);
+  const currentPlayer = currentPlayersById.get(playerId);
+
+  if (!legacyPlayer || !currentPlayer) {
+    return legacyData;
+  }
+
+  return { ...mergePlayersKeepingPrimary(currentPlayer, legacyPlayer) };
+}
+
 export async function importLegacyBolaoData(): Promise<LegacyImportResult> {
   const oldDb = getOldDb();
 
-  const [matchesSnapshot, playersSnapshot] = await Promise.all([
-    getDocs(collection(oldDb, 'matches')),
-    getDocs(collection(oldDb, 'players')),
-  ]);
+  const [matchesSnapshot, playersSnapshot, currentPlayersById] =
+    await Promise.all([
+      getDocs(collection(oldDb, 'matches')),
+      getDocs(collection(oldDb, 'players')),
+      loadCurrentPlayersById(),
+    ]);
 
   let predictionsCount = 0;
   const playerNames: string[] = [];
@@ -197,7 +233,11 @@ export async function importLegacyBolaoData(): Promise<LegacyImportResult> {
 
     return {
       id: document.id,
-      data,
+      data: mergeLegacyPlayerIntoCurrent(
+        document.id,
+        data,
+        currentPlayersById
+      ),
     };
   });
 

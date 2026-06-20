@@ -5,6 +5,7 @@ import {
   buildDuplicatePlayerPlans,
   getNormalizedEmail,
   mergePlayersByEmail,
+  mergePlayersKeepingPrimary,
 } from '../src/domain/playerMerge';
 import { computeLeaderboard } from '../src/domain/scoring';
 import { Match, Player, Prediction } from '../src/types';
@@ -121,6 +122,37 @@ const importedPlayers = [
     },
   }),
 ];
+
+const targetPlayerBeforeImport = createPlayer({
+  id: 'same-id-player',
+  name: 'Jogador no banco novo',
+  email: 'mesmoid@example.com',
+  predictions: {
+    m1: createPrediction(9, 9, '2026-06-01T10:00:00.000Z'),
+    m40: createPrediction(1, 1, '2026-06-10T10:00:00.000Z'),
+  },
+});
+const oldPlayerWithSameId = createPlayer({
+  id: 'same-id-player',
+  name: 'Jogador no banco antigo',
+  email: 'mesmoid@example.com',
+  predictions: {
+    m1: createPrediction(1, 0, '2026-06-02T10:00:00.000Z'),
+    m2: createPrediction(2, 2, '2026-06-02T10:10:00.000Z'),
+  },
+});
+const mergedSameIdPlayer = mergePlayersKeepingPrimary(
+  targetPlayerBeforeImport,
+  oldPlayerWithSameId
+);
+
+assert.deepEqual(Object.keys(mergedSameIdPlayer.predictions).sort(), [
+  'm1',
+  'm2',
+  'm40',
+]);
+assert.equal(mergedSameIdPlayer.predictions.m1.scoreA, 1);
+assert.equal(mergedSameIdPlayer.predictions.m40.scoreA, 1);
 
 const duplicatePlans = buildDuplicatePlayerPlans(importedPlayers, 'uid-main');
 

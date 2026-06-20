@@ -15,7 +15,8 @@
     "test:resilience": "tsx scripts/dataResilienceTest.ts",
     "test:browsers": "tsx scripts/browserSmokeTest.ts",
     "test:all": "tsx scripts/unitRegressionTest.tsx && tsx scripts/migrationConsolidationTest.ts && tsx scripts/dataVolumeTest.ts && tsx scripts/dataResilienceTest.ts && tsc --noEmit && vite build",
-    "deploy:rules": "npx firebase-tools deploy --only firestore:rules --project testebolao2"
+    "deploy:rules": "npx firebase-tools deploy --only firestore:rules --project bolaodacopa-90a57",
+    "deploy:rules:old": "npx firebase-tools deploy --only firestore:rules --project testebolao2"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
