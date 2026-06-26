@@ -1,96 +1,32 @@
 /**
- * @license
- * SPDX-License-Identifier: Apache-2.0
+ * Não busca nem salva dados. Define os contratos de tipos usados no projeto.
+ *
+ * As interfaces informam quais campos são esperados, quais são obrigatórios
+ * e qual tipo de valor cada campo deve receber.
+ *
+ * Elas ajudam o TypeScript durante o desenvolvimento, mas não validam
+ * dados recebidos do Firebase em tempo de execução.
+ *
+ * export permite usar esses tipos em outros arquivos.
+ * ? indica que um campo pode não existir.
  */
 
-export interface Match {
-  id: string;
-  teamA: string;
-  teamB: string;
+/**
+ * Fachada temporária de compatibilidade.
+ *
+ * Mantém os imports atuais do projeto funcionando enquanto os tipos
+ * ficam organizados em arquivos separados dentro de src/types.
+ */
 
-  // Mantemos flagA/flagB porque o app atual já usa isso.
-  // Para jogos vindos da API, podemos preencher com siglas tipo BRA, ARG, FRA.
-  flagA: string;
-  flagB: string;
+export type { AppTab } from './types/appTab';
+export type { BolaoRules } from './types/bolaoRules';
 
-  date: string; // exemplo: "13/06/2026"
-  time: string; // HH:MM
+export type {
+  ChampionPick,
+  ChampionPickSettings,
+  ChampionPickTeam,
+} from './types/championPick';
 
-  startsAt: string; // ISO datetime usado para travar palpite
-  startsAtMs: number; // epoch ms usado nas Firestore Rules
-
-  status: 'scheduled' | 'finished';
-
-  scoreA?: number; // placar real, apenas se finalizado
-  scoreB?: number; // placar real, apenas se finalizado
-
-  group: string;
-  venue?: string;
-  city?: string;
-
-  // Campos vindos da API
-  apiFixtureId?: string;
-  logoA?: string | null;
-  logoB?: string | null;
-  source?: 'espn' | 'openfootball' | string;
-}
-
-export interface Prediction {
-  scoreA: number;
-  scoreB: number;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface Player {
-  id: string;
-  name: string;
-  avatar: string;
-  predictions: Record<string, Prediction>; // matchId -> prediction
-  points: number;
-  exactHits: number;   // Acertos exatos (3 pts)
-  partialHits: number; // Acertos parciais / Ganhador (1 pt)
-  errorHits: number;   // Erros (0 pts)
-  manualPointsAdjustment?: number;
-  manualPointsAdjustmentUpdatedAt?: string;
-  lastPredictionMatchId?: string;
-  isAdmin?: boolean;
-  email?: string;
-}
-
-export interface BolaoRules {
-  entryFee: number; // R$ 10.00
-  firstPlacePercentage: number; // 0.8
-  secondPlacePercentage: number; // 0.2
-  pointsExact: number; // 3
-  pointsPartial: number; // 1
-  pointsError: number; // 0
-}
-
-export type AppTab = 'home' | 'matches' | 'ranking' | 'admin';
-
-export interface ChampionPickTeam {
-  code: string;
-  name: string;
-  logo?: string | null;
-}
-
-export interface ChampionPickSettings {
-  enabled: boolean;
-  locked: boolean;
-  bonusPoints: number;
-  championTeamCode: string;
-  eligibleTeams: ChampionPickTeam[];
-  eligibleTeamCodes: string[];
-  updatedAt?: string;
-}
-
-export interface ChampionPick {
-  playerId: string;
-  playerEmail: string;
-  playerName: string;
-  teamCode: string;
-  teamName: string;
-  teamLogo?: string | null;
-  createdAt: string;
-}
+export type { Match } from './types/match';
+export type { Player } from './types/player';
+export type { Prediction } from './types/prediction';
