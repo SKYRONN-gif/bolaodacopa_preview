@@ -1,31 +1,58 @@
-//vem do firesotore, da api dos jogos, e o cadastro manual do admin, aparece na tela dos jogos, ranking, usado nos components e representa uma partida
+/**
+ * Representa uma partida do bolão.
+ *
+ * Os dados podem vir do Firestore, de uma API externa ou de um cadastro
+ * manual feito pelo admin. Essa estrutura é usada para mostrar os jogos,
+ * bloquear palpites no horário correto e calcular o ranking após o fim
+ * da partida.
+ */
 export interface Match {
+  // Identificador único usado para relacionar palpites a esta partida.
   id: string;
+
+  // A ordem dos times precisa ser mantida no palpite e no placar final.
   teamA: string;
   teamB: string;
 
-  // Para jogos vindos da API, preencher com siglas tipo BRA, ARG, FRA.
+  // Campos mantidos por compatibilidade com o app atual.
+  // Podem conter bandeiras, emojis ou siglas como BRA, ARG e FRA.
   flagA: string;
   flagB: string;
 
-  date: string; // exemplo: "13/06/2026", mostra na tela
-  time: string; // HH:MM ex: 16:00 mostra na tela
+  // Campos voltados principalmente para exibição na tela.
+  date: string; // Exemplo: "13/06/2026"
+  time: string; // Exemplo: "16:00"
 
-  startsAt: string; // data ISO usada pelo React/JavaScript
-  startsAtMs: number; // horário em milissegundos usado para comparações seguras nas Rules
+  /**
+   * Representações completas do início da partida.
+   *
+   * startsAt é usado pelo React/JavaScript para trabalhar com data e hora.
+   * startsAtMs é usado pelas Firestore Rules para bloquear palpites depois
+   * que o horário da partida foi atingido.
+   */
+  startsAt: string;
+  startsAtMs: number;
 
+  // Define se o jogo ainda está agendado ou já possui resultado final.
   status: 'scheduled' | 'finished';
 
-  scoreA?: number; // placar real, apenas se finalizado
-  scoreB?: number; // placar real, apenas se finalizado
+  // Só devem existir quando a partida estiver finalizada.
+  scoreA?: number;
+  scoreB?: number;
 
   group: string;
   venue?: string;
   city?: string;
 
-  // Campos vindos da API
-  apiFixtureId?: string; // identificador do jogo na fonte externa
-  logoA?: string | null; // URL da logo, null ou campo ausente
+  /**
+   * Dados adicionais usados quando a partida veio de uma fonte externa.
+   *
+   * apiFixtureId ajuda a identificar o mesmo jogo na API e evita duplicações.
+   * logoA e logoB são URLs usadas na interface.
+   * source registra a origem dos dados.
+   */
+  apiFixtureId?: string;
+  logoA?: string | null;
   logoB?: string | null;
-  source?: 'espn' | 'openfootball' | string; //origem dos dados, como ESPN ou OpenFootball.
+  source?: 'espn' | 'openfootball' | string;
 }

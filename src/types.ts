@@ -1,23 +1,13 @@
 /**
- * Não busca nem salva dados. Define os contratos de tipos usados no projeto.
+ * Fachada temporária de compatibilidade para os tipos compartilhados.
  *
- * As interfaces informam quais campos são esperados, quais são obrigatórios
- * e qual tipo de valor cada campo deve receber.
+ * Mantém imports antigos, como `import type { Player } from '../types'`,
+ * funcionando enquanto as definições foram separadas em arquivos dentro
+ * da pasta `src/types`.
  *
- * Elas ajudam o TypeScript durante o desenvolvimento, mas não validam
- * dados recebidos do Firebase em tempo de execução.
- *
- * export permite usar esses tipos em outros arquivos.
- * ? indica que um campo pode não existir.
+ * Este arquivo pode ser removido futuramente, quando todos os imports
+ * do projeto apontarem diretamente para `src/types/index.ts`.
  */
-
-/**
- * Fachada temporária de compatibilidade.
- *
- * Mantém os imports atuais do projeto funcionando enquanto os tipos
- * ficam organizados em arquivos separados dentro de src/types.
- */
-
 export type { AppTab } from './types/appTab';
 export type { BolaoRules } from './types/bolaoRules';
 

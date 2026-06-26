@@ -1,11 +1,17 @@
 /**
- * Verificar em finance.ts e scoring.ts
+ * Define o formato de uma configuração central das regras do bolão.
+ *
+ * Essa interface informa quais valores seriam necessários para calcular
+ * taxa de entrada, divisão da premiação e pontuação dos palpites.
+ *
+ * Ela não aplica nem armazena essas regras sozinha; apenas descreve
+ * como um objeto de regras deve ser estruturado.
  */
 export interface BolaoRules {
-  entryFee: number; // R$ 10.00
-  firstPlacePercentage: number; // 0.8
-  secondPlacePercentage: number; // 0.2
-  pointsExact: number; // 3
-  pointsPartial: number; // 1
-  pointsError: number; // 0
+  entryFee: number;
+  firstPlacePercentage: number;
+  secondPlacePercentage: number;
+  pointsExact: number;
+  pointsPartial: number;
+  pointsError: number;
 }
