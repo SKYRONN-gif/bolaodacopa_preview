@@ -1,29 +1,44 @@
 /**
- * @license
- * SPDX-License-Identifier: Apache-2.0
+ * Centraliza a configuração e os clientes Firebase usados pelo projeto.
+ *
+ * Este arquivo garante que o front-end saiba qual projeto Firebase utilizar,
+ * cria clientes reutilizáveis para autenticação e banco de dados, permite
+ * trocar para Emulators locais durante o desenvolvimento e padroniza o
+ * diagnóstico de erros do Firestore.
  */
 
-
-/**  * Este arquivo valida as variáveis de ambiente, cria as conexões com
- * Firestore e Firebase Auth, configura Emulators locais quando necessário
- * e oferece uma estrutura padrão para diagnosticar erros do Firestore. */
 import { initializeApp } from 'firebase/app';
 import {
   connectAuthEmulator,
-  getAuth, //Cria o cliente de autenticação (como? pq? pra poder conectar ao banco né)
-  GoogleAuthProvider, //Define que o login será pelo Google (não faço isso pelo firebase mesmo?)
+  getAuth,
+  GoogleAuthProvider,
 } from 'firebase/auth';
 import {
   connectFirestoreEmulator,
-  getFirestore, //Cria o cliente do banco Firestore pq preciso ter tudo isso aqui? Pra conectar com o banco? da onde descobriria isso?
-} from 'firebase/firestore'; //oq é firestore? firebase é a plataforma do banco, firestore é o banco? e fire auth é da autenticação?
-
+  getFirestore,
+} from 'firebase/firestore';
 
 /**
- * Lista de variáveis necessárias para identificar o projeto Firebase correto.
+ * Informa ao TypeScript que este projeto pode guardar uma flag própria
+ * no objeto global window.
  *
- * Os valores vêm do .env.local durante desenvolvimento ou das variáveis
- * configuradas na Vercel durante o deploy.
+ * A flag permanece na página mesmo quando o Vite recarrega módulos durante
+ * o desenvolvimento, evitando uma segunda conexão com os Emulators.
+ */
+declare global {
+  interface Window {
+    __BOLAO_EMULATORS_CONNECTED__?: boolean;
+  }
+}
+
+/**
+ * Lista das variáveis necessárias para identificar o projeto Firebase.
+ *
+ * Localmente, esses valores vêm do arquivo .env.local.
+ * Em produção, vêm das Environment Variables configuradas na Vercel.
+ *
+ * "as const" faz o TypeScript preservar os nomes exatos das variáveis,
+ * permitindo acessar import.meta.env com mais segurança.
  */
 const REQUIRED_FIREBASE_ENV_KEYS = [
   'VITE_FIREBASE_API_KEY',
@@ -32,114 +47,247 @@ const REQUIRED_FIREBASE_ENV_KEYS = [
   'VITE_FIREBASE_STORAGE_BUCKET',
   'VITE_FIREBASE_MESSAGING_SENDER_ID',
   'VITE_FIREBASE_APP_ID',
-] as const; //preciso para conectar o banco firabase com a vercel?
+] as const;
 
 /**
- * Procura variáveis obrigatórias que não foram configuradas.
+ * Busca as variáveis obrigatórias que ainda não possuem valor.
  *
- * Retorna apenas os nomes das variáveis ausentes para que a mensagem
- * de erro informe exatamente o que precisa ser corrigido.
+ * Validar isso antes de inicializar o Firebase evita erros espalhados pelo
+ * sistema, como falhas de login ou banco sem uma causa clara.
  */
-//entendi oq é feito aqui, só não entendi o pq e como
-function getMissingFirebaseEnvKeys() {
+function getMissingFirebaseEnvKeys(): string[] {
+  // import.meta.env é o objeto criado pelo Vite com os valores do .env.local
+  // ou das Environment Variables configuradas na Vercel.
   const env = import.meta.env;
 
-  return REQUIRED_FIREBASE_ENV_KEYS.filter((key) => !env[key]);
+  // Guardará somente os nomes das variáveis que estão ausentes.
+  const missingKeys: string[] = [];
+
+  // Percorre uma variável obrigatória por vez.
+  for (const key of REQUIRED_FIREBASE_ENV_KEYS) {
+    const value = env[key];
+
+    // !value significa: o valor está vazio, undefined ou não foi configurado.
+    if (!value) {
+      missingKeys.push(key);
+    }
+  }
+
+  return missingKeys;
 }
 
 /**
- * Monta a configuração usada para inicializar o Firebase.
+ * Monta o objeto usado para inicializar o Firebase.
  *
- * O aplicativo falha imediatamente se alguma variável obrigatória estiver
- * ausente, evitando erros mais difíceis de diagnosticar em outras telas.
+ * A aplicação falha logo no início caso alguma configuração obrigatória
+ * esteja ausente. Essa estratégia é chamada de fail fast: interromper cedo
+ * com uma mensagem clara, em vez de permitir erros confusos mais adiante.
  */
-//mais uma vez entendi o que faz, mas não como
 function resolveFirebaseConfig() {
   const env = import.meta.env;
   const missingKeys = getMissingFirebaseEnvKeys();
 
-  //se falhar, mostra exatamente o que falta
   if (missingKeys.length > 0) {
+    // join transforma a lista em um texto legível para a mensagem de erro.
+    const missingKeysText = missingKeys.join(', ');
+
     throw new Error(
-      `Firebase nao configurado. Variaveis ausentes: ${missingKeys.join(', ')}`
+      `Firebase nao configurado. Variaveis ausentes: ${missingKeysText}`
     );
   }
 
-  //depois retorna com tudo preenchido correto
   return {
     apiKey: env.VITE_FIREBASE_API_KEY,
     authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
     projectId: env.VITE_FIREBASE_PROJECT_ID,
     storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
     messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+
+    // ?? usa string vazia apenas se o valor for null ou undefined.
+    // Na prática, appId deve existir porque ele já foi validado acima.
     appId: env.VITE_FIREBASE_APP_ID ?? '',
+
+    // measurementId é opcional porque o projeto pode não usar Analytics.
     measurementId: env.VITE_FIREBASE_MEASUREMENT_ID ?? '',
   };
 }
 
+/**
+ * Resolve qual banco Firestore será usado na inicialização.
+ *
+ * Quando nenhum ID específico é informado, o projeto deve usar o banco
+ * padrão. Por isso, valor vazio e "(default)" são normalizados para
+ * undefined antes de criar o cliente Firestore.
+ */
 function resolveDatabaseId(): string | undefined {
-  const env = import.meta.env;
+  const rawDatabaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID;
 
-  //se for diferente do env. data base id, ele fica undefined
-  if (!env.VITE_FIREBASE_DATABASE_ID) {
+  if (!rawDatabaseId) {
+    // undefined informa ao getFirestore que deve usar o banco padrão.
     return undefined;
   }
 
-  //recebe o data base id
-  const databaseId = env.VITE_FIREBASE_DATABASE_ID;
+  // trim remove espaços acidentais no .env, como " (default) ".
+  const configuredDatabaseId = rawDatabaseId.trim();
 
-  //retorna a data base como default
-  return databaseId === '(default)' ? undefined : databaseId;
+  // Valor vazio e "(default)" representam a mesma decisão de negócio:
+  // não escolher um banco alternativo.
+  const shouldUseDefaultDatabase =
+    configuredDatabaseId === '' || configuredDatabaseId === '(default)';
+
+  if (shouldUseDefaultDatabase) {
+    return undefined;
+  }
+
+  return configuredDatabaseId;
 }
+
 /**
- * Inicializa o Firebase uma única vez e exporta os clientes reutilizados
- * pelos services para autenticação, banco de dados e login com Google.
+ * Inicializa o projeto Firebase uma única vez.
+ *
+ * firebaseApp funciona como a configuração central compartilhada pelos
+ * serviços Firebase usados no navegador.
  */
-//cria a dependencia (acho que entendi o pq, mas denovo não entendi como, preciso que arrume isso ao explicar)
 const firebaseConfig = resolveFirebaseConfig();
-const app = initializeApp(firebaseConfig);
+const firebaseApp = initializeApp(firebaseConfig);
 const databaseId = resolveDatabaseId();
 
-//expoe os valores para outros arquivos que precisam do valor
+/**
+ * Cria o cliente Firestore usado por todos os services do projeto.
+ *
+ * Quando existe um databaseId específico, ele é usado. Caso contrário,
+ * o Firebase cria o cliente conectado ao banco padrão do projeto.
+ */
+function createFirestoreClient() {
+  if (databaseId) {
+    // Este formato é usado apenas quando o projeto precisa acessar
+    // um banco Firestore nomeado, diferente do banco padrão.
+    return getFirestore(firebaseApp, databaseId);
+  }
+
+  // Omitir o segundo parâmetro significa: usar o banco padrão.
+  return getFirestore(firebaseApp);
+}
+
+/**
+ * Exportações reutilizadas pelo restante da aplicação.
+ *
+ * db:
+ * cliente usado pelos services para ler, escutar e salvar documentos.
+ *
+ * auth:
+ * cliente usado para login, logout e identificação do usuário atual.
+ *
+ * googleProvider:
+ * informa que o fluxo de login deve utilizar contas Google.
+ */
 export const firebaseProjectId = firebaseConfig.projectId;
-export const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app); //entendi o que faz mas não como
-export const auth = getAuth(app);
+export const db = createFirestoreClient();
+export const auth = getAuth(firebaseApp);
 export const googleProvider = new GoogleAuthProvider();
 
+/**
+ * Verifica se o código está sendo executado no navegador.
+ *
+ * O objeto window não existe em ambientes como Node.js, testes automatizados
+ * ou renderização no servidor. Essa verificação impede que o arquivo tente
+ * usar recursos exclusivos do navegador nesses cenários.
+ */
+function isRunningInBrowser(): boolean {
+  // typeof é seguro mesmo quando window não existe.
+  // Usar apenas "window !== undefined" poderia quebrar antes da comparação.
+  return typeof window !== 'undefined';
+}
 
-//usado para ser um simulador local do firebase
+/**
+ * Conecta o cliente Firestore ao Emulator local, quando configurado.
+ *
+ * Exemplo:
+ * VITE_FIREBASE_EMULATOR_HOST=127.0.0.1:8080
+ *
+ * Usar o Emulator permite testar leituras, escritas e regras sem alterar
+ * dados reais do Firebase de produção.
+ */
+function connectFirestoreEmulatorIfConfigured() {
+  const emulatorAddress = import.meta.env.VITE_FIREBASE_EMULATOR_HOST;
+
+  if (!emulatorAddress) {
+    // Sem a variável no .env, o projeto continua usando o Firestore real.
+    return;
+  }
+
+  // split separa "127.0.0.1:8080" em host e porta.
+  const [host, portText] = emulatorAddress.split(':');
+
+  // A porta chega como texto pelo .env; Number converte para número.
+  const port = Number(portText);
+
+  if (!host || !Number.isInteger(port)) {
+    throw new Error(
+      'VITE_FIREBASE_EMULATOR_HOST deve seguir o formato host:porta. Exemplo: 127.0.0.1:8080'
+    );
+  }
+
+  connectFirestoreEmulator(db, host, port);
+}
+
+/**
+ * Conecta o cliente de autenticação ao Emulator local, quando configurado.
+ *
+ * Exemplo:
+ * VITE_FIREBASE_AUTH_EMULATOR_URL=http://127.0.0.1:9099
+ *
+ * Isso redireciona login e usuários de teste para o ambiente simulado,
+ * sem interferir nas contas reais do Firebase Authentication.
+ */
+function connectAuthEmulatorIfConfigured() {
+  const emulatorUrl = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_URL;
+
+  if (!emulatorUrl) {
+    return;
+  }
+
+  connectAuthEmulator(auth, emulatorUrl, {
+    disableWarnings: true,
+  });
+}
+
+/**
+ * Conecta os Emulators somente quando o projeto estiver no navegador e as
+ * variáveis de desenvolvimento estiverem configuradas.
+ *
+ * A flag no window impede reconexões durante recargas de módulo do Vite,
+ * que podem acontecer sem a página inteira ser atualizada.
+ */
 function connectEmulatorsIfConfigured() {
-  if (typeof window === 'undefined') return; //Se este código estiver rodando em ambiente sem navegador, pare aqui. (pq precisaria isso? não entendi)
-
-  const env = import.meta.env; //tentei ler esse env. mas achei confuso ainda
-
-  //cria uma prórpriedade propria pro window (n sei pq e nem como)
-  const windowWithFlag = window as typeof window & {
-    __BOLAO_EMULATORS_CONNECTED__?: boolean;
-  };
-
-  //evita conectar duplicadamente
-  if (windowWithFlag.__BOLAO_EMULATORS_CONNECTED__) return;
-
-//conecta ao banco simulado
-  if (env.VITE_FIREBASE_EMULATOR_HOST) {
-    const [host, port] = env.VITE_FIREBASE_EMULATOR_HOST.split(':');
-    connectFirestoreEmulator(db, host, Number(port));
+  if (!isRunningInBrowser()) {
+    return;
   }
 
-  //cria usuários na simulação local
-  if (env.VITE_FIREBASE_AUTH_EMULATOR_URL) {
-    connectAuthEmulator(auth, env.VITE_FIREBASE_AUTH_EMULATOR_URL, {
-      disableWarnings: true,
-    });
+  // A comparação explícita com true deixa claro que undefined também
+  // significa "ainda não conectou".
+  const emulatorsAlreadyConnected =
+    window.__BOLAO_EMULATORS_CONNECTED__ === true;
+
+  if (emulatorsAlreadyConnected) {
+    return;
   }
 
-  windowWithFlag.__BOLAO_EMULATORS_CONNECTED__ = true;
+  connectFirestoreEmulatorIfConfigured();
+  connectAuthEmulatorIfConfigured();
+
+  // A flag fica no window, não no módulo. Por isso ela sobrevive melhor
+  // às recargas parciais feitas pelo Vite durante o desenvolvimento.
+  window.__BOLAO_EMULATORS_CONNECTED__ = true;
 }
 
 connectEmulatorsIfConfigured();
-
-//tipo d eoperação que pode ser usado no codigo
+/**
+ * Define os tipos de operação que podem falhar ao acessar o Firestore.
+ *
+ * Registrar a operação ajuda a identificar se o problema aconteceu ao
+ * criar, atualizar, excluir, buscar ou listar dados.
+ */
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -149,43 +297,99 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-//da o corpo do erro ex:
+/**
+ * Define as informações técnicas registradas quando uma operação do
+ * Firestore falha.
+ *
+ * Esses dados ajudam a investigar erros de caminho, autenticação e regras
+ * de permissão sem depender apenas da mensagem genérica do Firebase.
+ */
 export interface FirestoreErrorInfo {
-  error: string;                            // "error": "Missing or insufficient permissions.",
-  operationType: OperationType;             // "operationType": "update",
-  path: string | null;                      // "path": "players/abc123",
+  error: string;
+  operationType: OperationType;
+  path: string | null;
   authInfo: {
-    userId?: string | null;                 //"userId": "abc123",
-    email?: string | null;                  //"email": "usuario@gmail.com",
-    emailVerified?: boolean | null;         //"emailVerified": true,
-    isAnonymous?: boolean | null;           // "isAnonymous": false
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+  };
+}
+
+/**
+ * Extrai uma mensagem legível de um erro desconhecido.
+ *
+ * O catch pode receber Error, texto, número ou outro valor. Por isso o
+ * parâmetro é unknown e precisa ser tratado antes de acessar .message.
+ */
+function getErrorMessage(error: unknown): string {
+  // instanceof confirma que o valor realmente possui a estrutura Error
+  // antes de tentar acessar error.message.
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  // String garante uma mensagem mesmo quando alguém lança texto, número
+  // ou um objeto inesperado.
+  return String(error);
+}
+
+/**
+ * Reúne informações do usuário autenticado no momento em que ocorreu o erro.
+ *
+ * Esses dados ajudam a descobrir, por exemplo, se uma Firestore Rule bloqueou
+ * uma operação porque não havia login, e-mail verificado ou permissão admin.
+ */
+function getCurrentUserErrorInfo() {
+  return {
+    // ?. evita erro quando ninguém está logado.
+    // Se currentUser for null, o resultado será undefined.
+    userId: auth.currentUser?.uid,
+    email: auth.currentUser?.email,
+    emailVerified: auth.currentUser?.emailVerified,
+    isAnonymous: auth.currentUser?.isAnonymous,
+  };
+}
+
+/**
+ * Monta um objeto padronizado com todos os detalhes úteis para diagnóstico.
+ *
+ * Separar essa montagem da função principal reduz a responsabilidade de
+ * handleFirestoreError e facilita entender de onde cada informação vem.
+ */
+function createFirestoreErrorInfo(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): FirestoreErrorInfo {
+  return {
+    error: getErrorMessage(error),
+    operationType,
+    path,
+    authInfo: getCurrentUserErrorInfo(),
   };
 }
 
 /**
  * Registra detalhes de um erro do Firestore e interrompe a operação atual.
  *
- * Os services informam a operação e o caminho afetado. A função adiciona
- * também dados do usuário autenticado para facilitar a investigação de
- * problemas de permissão e Firestore Rules.
+ * O retorno never informa ao TypeScript que esta função nunca termina
+ * normalmente: ela sempre lança um erro e encerra o fluxo atual.
  */
 export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
   path: string | null
 ): never {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-    },
+  const errorInfo = createFirestoreErrorInfo(
+    error,
     operationType,
-    path,
-  };
+    path
+  );
 
-  console.error('Firestore Error Details:', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  // O console guarda detalhes técnicos para desenvolvimento.
+  console.error('Firestore Error Details:', errorInfo);
+
+  // throw encerra a função; por isso o retorno é never, e não void.
+  throw new Error(JSON.stringify(errorInfo));
 }
