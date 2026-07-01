@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TS101",
+    "title": "Página inicial pública carrega sem tela branca",
+    "category": "smoke",
+    "priority": "High",
+    "description": "Validar que a aplicação abre normalmente e apresenta a navegação pública antes de qualquer login.",
+    "steps": [
+      "Abrir http://localhost:3000/",
+      "Aguardar até 20 segundos pelo carregamento inicial da aplicação",
+      "Confirmar que o nome Sponte Bet está visível",
+      "Confirmar que as opções Início & Regras, Meus Palpites e Classificação estão visíveis",
+      "Confirmar que o botão Entrar com Google está visível",
+      "Confirmar que não há tela branca nem mensagem de erro crítica"
+    ]
+  },
+  {
+    "id": "TS104",
+    "title": "Navegação visual para Meus Palpites exibe partidas públicas",
+    "category": "public",
+    "priority": "High",
+    "description": "Validar que um visitante consegue clicar visualmente em Meus Palpites e visualizar cards públicos carregados do Firestore.",
+    "steps": [
+      "Abrir http://localhost:3000/",
+      "Não digitar /partidas diretamente na barra de endereço",
+      "Clicar visualmente na opção Meus Palpites da navegação principal",
+      "Aguardar até 20 segundos pelo carregamento das partidas do Firestore",
+      "Confirmar que o aviso Modo leitura ou a mensagem para entrar com Google está visível",
+      "Confirmar que a aba Abertos ou outra aba de partidas está visível",
+      "Confirmar que pelo menos um card de partida está visível",
+      "Confirmar que o card México e Equador está visível",
+      "Confirmar que o card México e Equador apresenta a data 30/06/2026 e o horário 22:00",
+      "Confirmar que não há tela branca nem erro crítico visível"
+    ]
+  },
+  {
+    "id": "TS105",
+    "title": "Navegação visual para Classificação exibe ranking público",
+    "category": "public",
+    "priority": "Medium",
+    "description": "Validar que a classificação pode ser acessada visualmente e renderiza dados públicos sem exigir login.",
+    "steps": [
+      "Abrir http://localhost:3000/",
+      "Clicar visualmente na opção Classificação da navegação principal",
+      "Aguardar até 20 segundos pelo carregamento do ranking",
+      "Confirmar que a área de classificação está visível",
+      "Confirmar que participantes ou uma mensagem de estado vazio é exibida",
+      "Quando houver participantes, confirmar que os pontos são exibidos",
+      "Confirmar que não há tela branca nem erro crítico visível"
+    ]
+  }
+]
