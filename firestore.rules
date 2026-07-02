@@ -2,43 +2,98 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
 
-    function verifiedUser() {
-      return signedIn()
-        && request.auth.token.email_verified == true
-        && request.auth.token.email is string
-        && request.auth.token.email.size() <= 254;
-    }
+/** * Confirma se o usuário está autenticado no sistema (checa se foi criado o token do auth, ou se está null (que não fez o login)).
+ * O `request.auth` é preenchido automaticamente pelo Firebase Auth,
+ * que cria o token quando o usuário faz o login.
+ * O front-end não tem nenhum controle sobre essa variável, o que garante a segurança.
+ */
+function signedIn() {
+  return request.auth != null;
+}
 
-    function adminEmails() {
-      return [
-        "nahanmiguelbarbosa@gmail.com",
-        "bolaoadmin@gmail.com"
-      ];
-    }
+/** * Verifica se o usuário tem uma conta autêntica, válida e com e-mail confirmado.
+ *
+ * Como funciona:
+ * 1. O signedIn() garante que o usuário apresentou um token de login válido.
+ * 2. O request.auth.token acessa os dados DENTRO desse token (gerado pelo Firebase Auth).
+ * * As Rules usam exclusivamente esse token emitido pelo backend, e não informações 
+ * enviadas pelo navegador. Isso impede que alguém tente se passar por outro usuário
+ * alterando dados no front-end.
+ */
+function verifiedUser() {
+  return signedIn()
+    && request.auth.token.email_verified == true
+    && request.auth.token.email is string
+    && request.auth.token.email.size() <= 254;
+}
 
-    function hasAdminProfile() {
-      return verifiedUser()
-        && exists(/databases/$(database)/documents/players/$(request.auth.uid))
-        && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.isAdmin == true
-        && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.email is string
-        && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.email == request.auth.token.email;
-    }
+/** * Lista dos e-mails que possuem acesso de administrador permanente.
+ * * Funciona como um caminho seguro de recuperação (Super Admin). 
+ * Como essa lista está definida diretamente nas Regras (e não no banco de dados), 
+ * mesmo que os dados do banco sejam alterados ou apagados, esses usuários 
+ * nunca perdem o acesso e podem restaurar/consertar o sistema.
+ */
+function adminEmails() {
+  return [
+    "nahanmiguelbarbosa@gmail.com",
+    "bolaoadmin@gmail.com"
+  ];
+}
 
-    function isAdmin() {
-      return verifiedUser()
-        && (
-          request.auth.token.email in adminEmails()
-          || hasAdminProfile()
-        );
-    }
+/** * Verifica se o usuário comum tem privilégios de Administrador no banco de dados.
+ *
+ * Segurança extra: Não basta existir algum perfil de admin no banco. 
+ * O sistema obriga que o documento de admin seja exatamente o do usuário logado (usando o UID dele)
+ * e exige que o e-mail do banco de dados e o e-mail do Google Auth sejam idênticos.
+ * Isso impede que um usuário mal-intencionado tente se passar por um admin usando os dados de outra pessoa.
+ */
+function hasAdminProfile() {
+  // 1. Confirma se o usuário está logado e verificou o e-mail
+  return verifiedUser()
+    
+    // 2. Garante que existe um documento de player com o MESMO UID da pessoa logada
+    && exists(/databases/$(database)/documents/players/$(request.auth.uid))
+    
+    // 3. Verifica se dentro desse documento específico o campo isAdmin é verdadeiro
+    && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.isAdmin == true
+    
+    // 4. Checa se o campo de e-mail no banco de dados é um texto
+    && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.email is string
+    
+    // 5. Confirma se o e-mail salvo no banco é idêntico ao e-mail do token do Firebase Auth
+    && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.email == request.auth.token.email;
+}
 
-    function isOwner(playerId) {
-      return verifiedUser() && request.auth.uid == playerId;
-    }
+/**
+ * Define quem possui autorização administrativa no Firestore.
+ *
+ * A pessoa precisa ser um usuário verificado e atender a uma das duas formas
+ * de autorização: estar na lista fixa de administradores ou possuir um perfil
+ * próprio marcado como admin.
+ */
+function isAdmin() {
+  return verifiedUser()
+    && (
+      // Primeiro caminho: e-mail previamente autorizado no código.
+      request.auth.token.email in adminEmails()
+
+      // Segundo caminho: perfil do próprio usuário marcado como admin.
+      || hasAdminProfile()
+    );
+}
+
+/**
+ * Confirma se o usuário autenticado é o dono legítimo do perfil.
+ * * Por que precisamos disso? 
+ * Serve para impedir que um usuário logado altere os dados de OUTRO usuário.
+ * Para contas novas criadas pelo Firebase Auth, o ID do documento no banco (playerId)
+ * é criado usando exatamente o mesmo UID da conta do usuário.
+ * Essa regra exige que o "crachá" (UID) seja igual ao nome da "gaveta" (playerId).
+ */
+function isOwner(playerId) {
+  return verifiedUser() && request.auth.uid == playerId;
+}
 
     function isLegacyEmailOwner() {
       return verifiedUser()
