@@ -681,25 +681,79 @@ function ownerUpdateIsSafe(playerId) {
     && ownerChangedFieldsAreSafe();
 }
 
-    match /matches/{matchId} {
-      allow read: if true;
-      allow create, update: if isAdmin()
-        && matchDataIsValid(request.resource.data, matchId);
-      allow delete: if isAdmin();
-    }
+    
+ //Regras de acesso para a coleção de partidas ('matches').
+//seria o caminho 
+match /matches/{matchId} {
+  
+  // LEITURA PÚBLICA: Qualquer usuário (mesmo sem login) pode visualizar os 
+  // jogos agendados, horários e resultados finalizados.
+  allow read: if true;
 
-    match /players/{playerId} {
-      allow read: if true;
-      allow create: if (
-        isAdmin()
-        && playerDataIsValid(request.resource.data, playerId)
-      );
-      allow update: if (
-        isAdmin()
-        && playerDataIsValid(request.resource.data, playerId)
-      ) || ownerUpdateIsSafe(playerId);
-      allow delete: if isAdmin();
-    }
+   // CRIAÇÃO E ATUALIZAÇÃO: Exclusivo para Administradores.
+   // O Admin é o único que pode adicionar novos jogos ou alterar placares e status.
+   // A função `matchDataIsValid` atua como uma barreira extra, garantindo que
+   // mesmo o Admin envie os dados no formato correto (sem placares com letras, etc).
+   //
+  allow create, update: if isAdmin()
+    && matchDataIsValid(request.resource.data, matchId);
+
+  // EXCLUSÃO: Apenas o Administrador pode apagar uma partida do sistema.
+  allow delete: if isAdmin();
+}
+
+    // Regras de acesso para os perfis dos participantes (players).
+match /players/{playerId} {
+  
+  // LEITURA PÚBLICA: Necessário para que o sistema consiga montar o ranking
+  // geral e permitir que os participantes vejam as pontuações uns dos outros.
+  allow read: if true;
+
+  // CRIAÇÃO DE PERFIL (Dois Caminhos Autorizados):
+  //
+  // 1. Pelo Admin: Pode criar o perfil livremente (com pontos ou status VIP).
+  // Isso é usado para a importação do banco de dados antigo.
+  //
+  // 2. Pelo próprio Usuário: Permite o cadastro no primeiro login do app.
+  // O `ownerCreateIsSafe` garante que o usuário crie apenas o SEU próprio
+  // perfil, iniciando com zero pontos e sem privilégios administrativos.
+  allow create: if (
+    // Caminho 1: Admin importando ou criando
+    (isAdmin() && playerDataIsValid(request.resource.data, playerId))
+    
+    // Caminho 2: Usuário se cadastrando sozinho
+    || ownerCreateIsSafe(playerId)
+  );
+
+  // ATUALIZAÇÃO DE PERFIL (Dois Caminhos Autorizados):
+  //
+  // 1. Pelo Admin: Pode editar qualquer perfil (para corrigir dados ou 
+  // recalcular pontos), desde que mantenha o formato dos dados válido.
+  //
+  // 2. Pelo próprio Usuário: Pode editar apenas o SEU próprio perfil.
+  // A requisição é filtrada pela função `ownerUpdateIsSafe`, que age
+  // como um escudo: ela permite alterar os palpites, mas trava qualquer
+  // tentativa de modificar os pontos ou o status de admin.
+  allow update: if (
+    // Caminho 1: Admin
+    (isAdmin() && playerDataIsValid(request.resource.data, playerId))
+    
+    // Caminho 2: Usuário alterando a si mesmo
+    || ownerUpdateIsSafe(playerId)
+  );
+
+  // EXCLUSÃO: Apenas o Administrador pode apagar um participante.
+  // Impede que usuários deletem a própria conta e quebrem o ranking do bolão.
+  allow delete: if isAdmin();
+}
+}
+
+/**
+ * Confirma que a configuração da Bolsa Campeão possui somente campos conhecidos.
+ *
+ * Os campos são opcionais porque a configuração pode ser criada ou evoluída
+ * gradualmente. Quando um campo existe, a Rule valida seu tipo e limite.
+ */ aonde mostra que são opcionais?
 function championPickSettingsIsValid(data) {
   return data.keys().hasOnly([
     "enabled",
@@ -710,35 +764,121 @@ function championPickSettingsIsValid(data) {
     "eligibleTeamCodes",
     "updatedAt"
   ])
+
+  // Cada campo opcional só é validado quando estiver presente.
   && (!data.keys().hasAny(["enabled"]) || data.enabled is bool)
   && (!data.keys().hasAny(["locked"]) || data.locked is bool)
-  && (!data.keys().hasAny(["bonusPoints"]) || (data.bonusPoints is number && data.bonusPoints >= 0 && data.bonusPoints <= 500))
-  && (!data.keys().hasAny(["championTeamCode"]) || (data.championTeamCode is string && data.championTeamCode.size() <= 20))
-  && (!data.keys().hasAny(["eligibleTeams"]) || (data.eligibleTeams is list && data.eligibleTeams.size() <= 64))
-  && (!data.keys().hasAny(["eligibleTeamCodes"]) || (data.eligibleTeamCodes is list && data.eligibleTeamCodes.size() <= 64))
-  && (!data.keys().hasAny(["updatedAt"]) || (data.updatedAt is string && data.updatedAt.size() <= 40));
+
+   // Limita bônus para evitar pontuações absurdas por erro administrativo.
+  && (
+    !data.keys().hasAny(["bonusPoints"])
+    || (
+      data.bonusPoints is number
+      && data.bonusPoints >= 0
+      && data.bonusPoints <= 500
+    )
+  )
+
+   && (
+    !data.keys().hasAny(["championTeamCode"])
+    || (
+      data.championTeamCode is string
+      && data.championTeamCode.size() <= 20
+    )
+  )
+
+  // As listas são limitadas para evitar documentos excessivamente grandes.
+  && (
+    !data.keys().hasAny(["eligibleTeams"])
+    || (
+      data.eligibleTeams is list
+      && data.eligibleTeams.size() <= 64
+    )
+  )
+
+  && (
+    !data.keys().hasAny(["eligibleTeamCodes"])
+    || (
+      data.eligibleTeamCodes is list
+      && data.eligibleTeamCodes.size() <= 64
+    )
+  )
+
+  && (
+    !data.keys().hasAny(["updatedAt"])
+    || (
+      data.updatedAt is string
+      && data.updatedAt.size() <= 40
+    )
+  );
 }
 
+// Regras para a pasta de configurações globais do bolão ('settings').
+// Serve para travar documentos que controlam o funcionamento geral do app.
 match /settings/{settingId} {
+  
+  // LEITURA PÚBLICA: Necessário para que qualquer usuário (mesmo deslogado)
+  // que acesse a Home consiga ver as regras do jogo (ex: se a janela de
+  // escolher o Campeão ainda está aberta e quais são os times disponíveis).
   allow read: if true;
 
+  // CRIAÇÃO E ATUALIZAÇÃO: Bloqueado com três cadeados.
+  //
+  // Cadeado 1 (settingId): O documento OBRIGATORIAMENTE tem que se chamar "championPick".
+  // Isso impede que um hacker crie documentos como settings/configSecreta no seu banco.
+  // Cadeado 2 (isAdmin): Só o Dono do Bolão tem a chave.
+  // Cadeado 3 (championPickSettingsIsValid): O Admin não pode salvar dados quebrados.
   allow create, update: if settingId == "championPick"
     && isAdmin()
     && championPickSettingsIsValid(request.resource.data);
 
+  // EXCLUSÃO PROIBIDA: Cadeado absoluto (if false).
+  // Se o documento "championPick" for apagado, a tela Home do aplicativo vai
+  // quebrar (tela branca) ou as regras de pontuação vão falhar. Portanto,
+  // ninguém tem permissão para deletar este arquivo via sistema.
   allow delete: if false;
 }
 
+
+// Verifica se a janela para apostar no Campeão do torneio está aberta.
+// Esta função é usada como um "porteiro" antes de deixar o usuário
+// salvar ou alterar o palpite de quem vai ganhar a Copa.
 function championPickIsOpen() {
+  
+  // 1. Confirma se o documento de configuração realmente existe no banco.
   return exists(/databases/$(database)/documents/settings/championPick)
+    
+    // 2. INTERRUPTOR GLOBAL: Garante que a administração do bolão ativou
+    // a brincadeira de adivinhar o campeão para este torneio.
     && get(/databases/$(database)/documents/settings/championPick).data.enabled == true
+    
+    // 3. PRAZO (CADEADO): Garante que as apostas não foram trancadas.
+    // Geralmente as apostas são bloqueadas (locked = true) no exato 
+    // momento em que a primeira partida da Copa começa.
     && get(/databases/$(database)/documents/settings/championPick).data.locked == false;
 }
 
+/**
+ * Confirma se o código escolhido pertence à lista oficial de seleções permitidas.
+ *
+ * A validação usa eligibleTeamCodes, uma lista simples de códigos como BRA,
+ * ARG e FRA. Isso é mais fácil e seguro de validar nas Rules do que percorrer
+ * objetos completos com nome e logo.
+ */
 function championTeamIsEligible(teamCode) {
-  return exists(/databases/$(database)/documents/settings/championPick)
-    && get(/databases/$(database)/documents/settings/championPick).data.eligibleTeamCodes is list
-    && teamCode in get(/databases/$(database)/documents/settings/championPick).data.eligibleTeamCodes;
+  return exists(
+    /databases/$(database)/documents/settings/championPick
+  )
+
+//transforma os times legisletivo em lista
+    && get(
+      /databases/$(database)/documents/settings/championPick
+    ).data.eligibleTeamCodes is list
+
+//faz um get na lista? tipo um for?
+    && teamCode in get(
+      /databases/$(database)/documents/settings/championPick
+    ).data.eligibleTeamCodes;
 }
 
 function championPickEmailMatches(playerEmail) {
