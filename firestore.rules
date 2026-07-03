@@ -95,19 +95,63 @@ function isOwner(playerId) {
   return verifiedUser() && request.auth.uid == playerId;
 }
 
-    function isLegacyEmailOwner() {
-      return verifiedUser()
-        && resource.data.email is string
-        && resource.data.email == request.auth.token.email;
-    }
+/**
+ * Confirma se o usuário é dono de um player importado pelo e-mail.
+ *
+ * Jogadores vindos do banco antigo podem possuir um ID diferente do UID atual
+ * do Firebase Auth. Nesse caso, o e-mail funciona como vínculo temporário para
+ * permitir que a pessoa atualize o próprio perfil sem criar um duplicado.
+ *
+ * resource.data representa o documento que já existe no Firestore antes da
+ * operação de update.
+ */
+function isLegacyEmailOwner() {
+  return verifiedUser()
 
-    function isValidId(id) {
-      return id is string
-        && id.size() > 0
-        && id.size() <= 128
-        && id.matches("^[a-zA-Z0-9_\\-]+$");
-    }
+    // Antes de comparar, confirma que o e-mail salvo possui formato de texto.
+    && resource.data.email is string
 
+    // Permite apenas quando o e-mail salvo é igual ao e-mail autenticado.
+    && resource.data.email == request.auth.token.email;
+}
+
+/**
+ * Valida se um identificador pode ser usado com segurança como ID de documento.
+ *
+ * IDs inválidos podem dificultar consultas, gerar caminhos inesperados ou
+ * tornar a estrutura do banco inconsistente. Por isso, as Rules limitam
+ * tamanho e caracteres aceitos antes de permitir a operação.
+ */
+function isValidId(id) {
+  return id is string
+
+    // Evita IDs vazios.
+    && id.size() > 0
+
+    // Limita tamanho para impedir valores anormalmente grandes.
+    && id.size() <= 128
+
+    /**
+     * Aceita apenas:
+     * letras maiúsculas e minúsculas;
+     * números;
+     * underline _;
+     * hífen -.
+     *
+     * ^ marca o início do texto.
+     * + significa "um ou mais caracteres".
+     * $ marca o fim do texto.
+     */
+    && id.matches("^[a-zA-Z0-9_\\-]+$");
+}
+
+/**
+ * Confirma que o documento de uma partida possui somente campos conhecidos.
+ *
+ * hasOnly impede que dados inesperados sejam gravados no Firestore.
+ * Isso protege contra erros de digitação, campos antigos esquecidos e
+ * alterações feitas pelo front-end que não pertencem ao modelo Match.
+ */
    function matchFieldsAreValid(data) {
   return data.keys().hasOnly([
     "id",
@@ -132,48 +176,119 @@ function isOwner(playerId) {
   ]);
 }
 
-    function matchDataIsValid(data, matchId) {
-      return matchFieldsAreValid(data)
-        && data.id == matchId
-        && isValidId(matchId)
-        && data.teamA is string
-        && data.teamA.size() > 0
-        && data.teamA.size() <= 100
-        && data.teamB is string
-        && data.teamB.size() > 0
-        && data.teamB.size() <= 100
-        && data.flagA is string
-        && data.flagA.size() <= 10
-        && data.flagB is string
-        && data.flagB.size() <= 10
-        && data.date is string
-        && data.date.size() <= 50
-        && data.time is string
-        && data.time.size() <= 50
-        && data.startsAt is string
-        && data.startsAt.size() <= 40
-        && data.startsAtMs is number
-        && data.group is string
-        && data.group.size() <= 50
-        && (!data.keys().hasAny(["venue"]) || (data.venue is string && data.venue.size() <= 120))
-        && (!data.keys().hasAny(["city"]) || (data.city is string && data.city.size() <= 120))
-        && (!data.keys().hasAny(["apiFixtureId"]) || (data.apiFixtureId is string && data.apiFixtureId.size() <= 128))
-        && (!data.keys().hasAny(["logoA"]) || data.logoA == null || (data.logoA is string && data.logoA.size() <= 500))
-        && (!data.keys().hasAny(["logoB"]) || data.logoB == null || (data.logoB is string && data.logoB.size() <= 500))
-        && (!data.keys().hasAny(["source"]) || (data.source is string && data.source.size() <= 50))
-        && data.status in ["scheduled", "finished"]
-        && (!data.keys().hasAny(["scoreA"]) || data.scoreA is number)
-        && (!data.keys().hasAny(["scoreB"]) || data.scoreB is number)
-        && (
-          data.status == "scheduled"
-          || (
-            data.keys().hasAll(["scoreA", "scoreB"])
-            && data.scoreA is number
-            && data.scoreB is number
-          )
-        );
-    }
+ /**
+ * Confirma que uma partida possui o formato e os valores esperados.
+ *
+ * Além de validar tipos, essa função garante regras importantes do bolão:
+ * o ID salvo dentro do documento deve ser igual ao ID usado no caminho,
+ * o status só pode ser "scheduled" ou "finished" e uma partida finalizada
+ * precisa ter os dois placares reais preenchidos.
+ */
+function matchDataIsValid(data, matchId) {
+  return matchFieldsAreValid(data)
 
+    // Evita divergência entre o caminho matches/{matchId} e o campo data.id.
+    && data.id == matchId
+
+    // Reutiliza a mesma regra de segurança aplicada aos IDs de jogadores.
+    && isValidId(matchId)
+
+    // Nomes dos times precisam existir e respeitar um limite de tamanho.
+    && data.teamA is string
+    && data.teamA.size() > 0
+    && data.teamA.size() <= 100
+    && data.teamB is string
+    && data.teamB.size() > 0
+    && data.teamB.size() <= 100
+
+    // flagA e flagB podem guardar emoji, bandeira ou sigla curta.
+    && data.flagA is string
+    && data.flagA.size() <= 10
+    && data.flagB is string
+    && data.flagB.size() <= 10
+
+    // date e time são textos de exibição; startsAt/startsAtMs são usados
+    // para comparações reais de horário e travamento de palpites.
+    && data.date is string
+    && data.date.size() <= 50
+    && data.time is string
+    && data.time.size() <= 50
+    && data.startsAt is string
+    && data.startsAt.size() <= 40
+    && data.startsAtMs is number
+
+    // group é obrigatório porque a interface e a organização dos jogos
+    // podem depender dessa informação.
+    && data.group is string
+    && data.group.size() <= 50
+
+    // Campos opcionais só são validados quando existem no documento.
+    && (
+      !data.keys().hasAny(["venue"])
+      || (data.venue is string && data.venue.size() <= 120)
+    )
+    && (
+      !data.keys().hasAny(["city"])
+      || (data.city is string && data.city.size() <= 120)
+    )
+    && (
+      !data.keys().hasAny(["apiFixtureId"])
+      || (data.apiFixtureId is string && data.apiFixtureId.size() <= 128)
+    )
+
+    // Logo pode estar ausente, ser null ou conter uma URL curta.
+    && (
+      !data.keys().hasAny(["logoA"])
+      || data.logoA == null
+      || (data.logoA is string && data.logoA.size() <= 500)
+    )
+    && (
+      !data.keys().hasAny(["logoB"])
+      || data.logoB == null
+      || (data.logoB is string && data.logoB.size() <= 500)
+    )
+
+    // source registra a origem do jogo, como ESPN, OpenFootball ou manual.
+    && (
+      !data.keys().hasAny(["source"])
+      || (data.source is string && data.source.size() <= 50)
+    )
+
+    // O sistema só reconhece jogo agendado ou finalizado.
+    && data.status in ["scheduled", "finished"]
+
+    // Placar é opcional para jogo agendado, mas quando existir precisa ser número.
+    && (
+      !data.keys().hasAny(["scoreA"])
+      || data.scoreA is number
+    )
+    && (
+      !data.keys().hasAny(["scoreB"])
+      || data.scoreB is number
+    )
+
+    /**
+     * Jogo agendado pode não ter placar.
+     *
+     * Jogo finalizado obrigatoriamente precisa ter scoreA e scoreB.
+     * Essa regra evita ranking com resultado incompleto.
+     */
+    && (
+      data.status == "scheduled"
+      || (
+        data.keys().hasAll(["scoreA", "scoreB"])
+        && data.scoreA is number
+        && data.scoreB is number
+      )
+    );
+}
+
+/**
+ * Confirma que o documento de um jogador possui somente campos reconhecidos.
+ *
+ * hasOnly evita que o front-end ou um script externo salve campos fora do
+ * modelo Player. 
+ */
     function playerFieldsAreValid(data) {
       return data.keys().hasOnly([
         "id",
@@ -192,145 +307,379 @@ function isOwner(playerId) {
       ]);
     }
 
-    function playerDataIsValid(data, playerId) {
-      return playerFieldsAreValid(data)
-        && data.id == playerId
-        && isValidId(playerId)
-        && data.name is string
-        && data.name.size() > 0
-        && data.name.size() <= 128
-        && data.avatar is string
-        && data.avatar.size() <= 10
-        && data.predictions is map
-        && data.predictions.keys().size() <= 128
-        && data.points is number
-        && data.exactHits is number
-        && data.partialHits is number
-        && data.errorHits is number
-        && data.get("manualPointsAdjustment", 0) is number
-        && data.get("manualPointsAdjustmentUpdatedAt", "") is string
-        && data.get("manualPointsAdjustmentUpdatedAt", "").size() <= 40
-        && data.get("lastPredictionMatchId", "") is string
-        && data.get("lastPredictionMatchId", "").size() <= 128
-        && data.isAdmin is bool
-        && data.email is string
-        && data.email.size() <= 254;
-    }
+/**
+ * Confirma que os dados salvos em players/{playerId} seguem o formato esperado.
+ *
+ * Essa função valida a estrutura geral do documento. Ela não decide ainda
+ * se a pessoa possui permissão para mudar cada campo; essa proteção acontece
+ * mais abaixo nas regras de owner/admin.
+ */
+function playerDataIsValid(data, playerId) {
+  return playerFieldsAreValid(data)
 
-    function predictionDataIsValid(prediction) {
-      return prediction is map
-        && prediction.keys().hasOnly([
-          "scoreA",
-          "scoreB",
-          "createdAt",
-          "updatedAt"
-        ])
-        && prediction.scoreA is number
-        && prediction.scoreA >= 0
-        && prediction.scoreA <= 99
-        && prediction.scoreB is number
-        && prediction.scoreB >= 0
-        && prediction.scoreB <= 99
-        && (!prediction.keys().hasAny(["createdAt"]) || (prediction.createdAt is string && prediction.createdAt.size() <= 40))
-        && (!prediction.keys().hasAny(["updatedAt"]) || (prediction.updatedAt is string && prediction.updatedAt.size() <= 40));
-    }
+    // O campo id precisa coincidir com o ID usado no caminho players/{playerId}.
+    // Isso evita documentos com identidade interna diferente do caminho salvo.
+    && data.id == playerId
+    && isValidId(playerId)
 
-    function matchIsOpenForPrediction(matchId) {
-      return exists(/databases/$(database)/documents/matches/$(matchId))
-        && get(/databases/$(database)/documents/matches/$(matchId)).data.status == "scheduled"
-        && get(/databases/$(database)/documents/matches/$(matchId)).data.startsAtMs is number
-        && request.time.toMillis() < get(/databases/$(database)/documents/matches/$(matchId)).data.startsAtMs;
-    }
+    // Nome é obrigatório porque ele aparece no ranking e nos palpites.
+    && data.name is string
+    && data.name.size() > 0
+    && data.name.size() <= 128
 
-    function predictionUpdateIsSafe() {
-      return request.resource.data.lastPredictionMatchId is string
-        && isValidId(request.resource.data.lastPredictionMatchId)
-        && request.resource.data.predictions.diff(resource.data.predictions).affectedKeys().hasOnly([
-          request.resource.data.lastPredictionMatchId
-        ])
-        && predictionDataIsValid(request.resource.data.predictions[request.resource.data.lastPredictionMatchId])
-        && matchIsOpenForPrediction(request.resource.data.lastPredictionMatchId);
-    }
+    // Avatar é obrigatório e limitado para impedir texto muito grande.
+    && data.avatar is string
+    && data.avatar.size() <= 10
 
-    function ownerEmailUpdateIsSafe() {
-      return resource.data.email == ""
-        && request.resource.data.email == request.auth.token.email;
-    }
+    /**
+     * predictions precisa ser um map.
+     *
+     * Em TypeScript, ele corresponde a:
+     * Record<string, Prediction>
+     *
+     * Em Java, seria parecido com:
+     * Map<String, Prediction>
+     */
+    && data.predictions is map
 
-    function ownerChangedFieldsAreSafe() {
-      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+    // Limita a quantidade de partidas com palpite para evitar documento gigante.
+    && data.predictions.keys().size() <= 128
 
-      return changedKeys.hasOnly([
-          "name",
-          "avatar",
-          "email",
-          "predictions",
-          "lastPredictionMatchId"
-        ])
-        && (
-          !changedKeys.hasAny(["email"])
-          || ownerEmailUpdateIsSafe()
-        )
-        && (
-          !changedKeys.hasAny(["predictions"])
-          || predictionUpdateIsSafe()
-        )
-        && (
-          changedKeys.hasAny(["predictions"])
-          || !changedKeys.hasAny(["lastPredictionMatchId"])
-        );
-    }
+    /**
+     * Estes campos representam dados de ranking.
+     *
+     * A Rule confirma que são números, mas não permite que usuários comuns
+     * alterem esses valores livremente. Essa proteção aparece mais abaixo.
+     */
+    && data.points is number
+    && data.exactHits is number
+    && data.partialHits is number
+    && data.errorHits is number
 
-    function ownerCreatePredictionsAreSafe() {
-      let matchId = request.resource.data.get("lastPredictionMatchId", "");
+    /**
+     * data.get("campo", valorPadrao) lê um campo opcional sem quebrar se ele
+     * ainda não existir em documentos antigos/importados.
+     *
+     * Isso mantém compatibilidade com dados legados durante a migração.
+     */
+    && data.get("manualPointsAdjustment", 0) is number
+    && data.get("manualPointsAdjustmentUpdatedAt", "") is string
+    && data.get("manualPointsAdjustmentUpdatedAt", "").size() <= 40
 
-      return (
-          request.resource.data.predictions.keys().size() == 0
-          && matchId == ""
-        )
-        || (
-          isValidId(matchId)
-          && request.resource.data.predictions.keys().hasOnly([matchId])
-          && predictionDataIsValid(request.resource.data.predictions[matchId])
-          && matchIsOpenForPrediction(matchId)
-        );
-    }
+    // Guarda qual palpite foi alterado por último para a Rule validar a mudança.
+    && data.get("lastPredictionMatchId", "") is string
+    && data.get("lastPredictionMatchId", "").size() <= 128
 
-    function ownerCreateIsSafe(playerId) {
-      return isOwner(playerId)
-        && playerDataIsValid(request.resource.data, playerId)
-        && request.resource.data.email in ["", request.auth.token.email]
-        && request.resource.data.isAdmin == false
-        && request.resource.data.points == 0
-        && request.resource.data.exactHits == 0
-        && request.resource.data.partialHits == 0
-        && request.resource.data.errorHits == 0
-        && request.resource.data.get("manualPointsAdjustment", 0) == 0
-        && request.resource.data.get("manualPointsAdjustmentUpdatedAt", "") == ""
-        && ownerCreatePredictionsAreSafe();
-    }
+    /**
+     * Mesmo que alguns campos sejam opcionais no TypeScript, documentos
+     * gravados no Firestore precisam possuir valores válidos para manter
+     * as Rules previsíveis e seguras.
+     */
+    && data.isAdmin is bool
+    && data.email is string
+    && data.email.size() <= 254;
+} 
 
-    function protectedPlayerFieldsUnchanged() {
-      return request.resource.data.id == resource.data.id
-        && (
-          request.resource.data.email == resource.data.email
-          || ownerEmailUpdateIsSafe()
-        )
-        && request.resource.data.isAdmin == resource.data.isAdmin
-        && request.resource.data.points == resource.data.points
-        && request.resource.data.exactHits == resource.data.exactHits
-        && request.resource.data.partialHits == resource.data.partialHits
-        && request.resource.data.errorHits == resource.data.errorHits
-        && request.resource.data.get("manualPointsAdjustment", 0) == resource.data.get("manualPointsAdjustment", 0)
-        && request.resource.data.get("manualPointsAdjustmentUpdatedAt", "") == resource.data.get("manualPointsAdjustmentUpdatedAt", "");
-    }
+ /**
+ * Confirma que um palpite possui somente os campos previstos e placares válidos.
+ *
+ * Essa função é chamada antes de permitir que um usuário altere um palpite.
+ * Ela protege o ranking contra valores inválidos, como texto no lugar de número,
+ * placar negativo ou campos extras enviados pelo navegador.
+ */
+function predictionDataIsValid(prediction) {
+  return prediction is map
 
-    function ownerUpdateIsSafe(playerId) {
-      return (isOwner(playerId) || isLegacyEmailOwner())
-        && playerDataIsValid(request.resource.data, playerId)
-        && protectedPlayerFieldsUnchanged()
-        && ownerChangedFieldsAreSafe();
-    }
+    // Impede campos fora do modelo Prediction.
+    && prediction.keys().hasOnly([
+      "scoreA",
+      "scoreB",
+      "createdAt",
+      "updatedAt"
+    ])
+
+    // scoreA representa o palpite para Match.teamA.
+    && prediction.scoreA is number
+    && prediction.scoreA >= 0
+    && prediction.scoreA <= 99
+
+    // scoreB representa o palpite para Match.teamB.
+    && prediction.scoreB is number
+    && prediction.scoreB >= 0
+    && prediction.scoreB <= 99
+
+    /**
+     * Datas são opcionais para manter compatibilidade com palpites antigos.
+     *
+     * Quando existirem, precisam ser texto curto no formato esperado pelo app.
+     */
+    && (
+      !prediction.keys().hasAny(["createdAt"])
+      || (
+        prediction.createdAt is string
+        && prediction.createdAt.size() <= 40
+      )
+    )
+    && (
+      !prediction.keys().hasAny(["updatedAt"])
+      || (
+        prediction.updatedAt is string
+        && prediction.updatedAt.size() <= 40
+      )
+    );
+}
+
+    /**
+ * Confirma se uma partida ainda aceita novos palpites.
+ *
+ * A validação usa request.time, que é o horário do servidor Firestore.
+ * Isso impede que alguém altere o relógio do próprio celular ou navegador
+ * para tentar palpitar depois que a partida começou.
+ */
+function matchIsOpenForPrediction(matchId) {
+  return exists(/databases/$(database)/documents/matches/$(matchId))
+
+    // Só jogos ainda agendados podem receber ou alterar palpites.
+    && get(/databases/$(database)/documents/matches/$(matchId)).data.status == "scheduled"
+
+    // Antes de comparar horários, confirma que startsAtMs existe e é número.
+    && get(/databases/$(database)/documents/matches/$(matchId)).data.startsAtMs is number
+
+    // O palpite só é permitido antes do horário oficial de início da partida.
+    && request.time.toMillis()
+      < get(/databases/$(database)/documents/matches/$(matchId)).data.startsAtMs;
+}
+
+    /**
+ * Confirma que a alteração feita no jogador modificou somente um palpite
+ * e que esse palpite pertence a uma partida ainda aberta.
+ *
+ * lastPredictionMatchId informa qual jogo está sendo salvo. As Rules usam
+ * esse campo para comparar o mapa de palpites antigo com o novo e impedir
+ * que o navegador altere vários jogos na mesma requisição.
+ */
+function predictionUpdateIsSafe() {
+  return request.resource.data.lastPredictionMatchId is string
+    && isValidId(request.resource.data.lastPredictionMatchId)
+
+    /**
+     * diff compara o mapa de palpites antigo com o novo.
+     *
+     * affectedKeys retorna as chaves que foram adicionadas, removidas ou
+     * alteradas. hasOnly garante que somente o jogo informado em
+     * lastPredictionMatchId sofreu alteração.
+     */
+    && request.resource.data.predictions
+      .diff(resource.data.predictions)
+      .affectedKeys()
+      .hasOnly([
+        request.resource.data.lastPredictionMatchId
+      ])
+
+    // Confirma que o palpite novo possui scoreA, scoreB e campos válidos.
+    && predictionDataIsValid(
+      request.resource.data.predictions[
+        request.resource.data.lastPredictionMatchId
+      ]
+    )
+
+    // A regra final é sempre o horário oficial da partida no Firestore.
+    && matchIsOpenForPrediction(
+      request.resource.data.lastPredictionMatchId
+    );
+}
+
+    /**
+ * Permite preencher o e-mail de um perfil antigo apenas uma vez.
+ *
+ * Jogadores importados podem ter sido salvos inicialmente com email vazio.
+ * Esta regra permite vincular esse perfil ao e-mail verificado do Firebase
+ * Auth, mas impede trocar um e-mail já associado por outro e-mail.
+ */
+function ownerEmailUpdateIsSafe() {
+  return resource.data.email == ""
+    && request.resource.data.email == request.auth.token.email;
+}
+
+    /**
+ * Confirma que o proprietário alterou somente campos permitidos.
+ *
+ * Um jogador comum pode atualizar nome, avatar, e-mail vazio, palpites e
+ * lastPredictionMatchId. Campos de ranking e permissões ficam protegidos
+ * porque são calculados pelo sistema ou controlados pelo administrador.
+ */
+function ownerChangedFieldsAreSafe() {
+  // Compara o documento antigo com o novo e guarda só os campos alterados.
+  let changedKeys =
+    request.resource.data.diff(resource.data).affectedKeys();
+
+  return changedKeys.hasOnly([
+    "name",
+    "avatar",
+    "email",
+    "predictions",
+    "lastPredictionMatchId"
+  ])
+
+    /**
+     * O e-mail pode ficar igual ou ser preenchido uma única vez quando
+     * o perfil antigo ainda possui email vazio.
+     */
+    && (
+      !changedKeys.hasAny(["email"])
+      || ownerEmailUpdateIsSafe()
+    )
+
+    /**
+     * Se houve mudança nos palpites, a alteração precisa passar pela
+     * validação de jogo aberto, palpite válido e alteração de uma chave só.
+     */
+    && (
+      !changedKeys.hasAny(["predictions"])
+      || predictionUpdateIsSafe()
+    )
+
+    /**
+     * lastPredictionMatchId não pode ser alterado sozinho.
+     *
+     * Ele só faz sentido quando acompanha uma alteração real em predictions.
+     */
+    && (
+      changedKeys.hasAny(["predictions"])
+      || !changedKeys.hasAny(["lastPredictionMatchId"])
+    );
+}
+
+    /**
+ * Confirma que os palpites enviados junto com a criação de um perfil são seguros.
+ *
+ * Um jogador novo pode criar o perfil sem palpite algum ou já criar um único
+ * palpite para uma partida aberta. A Rule bloqueia criação com vários palpites
+ * de uma vez, porque isso dificultaria validar cada alteração individualmente.
+ */
+function ownerCreatePredictionsAreSafe() {
+  // get("campo", valorPadrao) mantém compatibilidade com dados que não possuem
+  // lastPredictionMatchId. Se faltar, usamos string vazia.
+  let matchId =
+    request.resource.data.get("lastPredictionMatchId", "");
+
+  return (
+      // Caso simples: perfil criado sem nenhum palpite.
+      request.resource.data.predictions.keys().size() == 0
+      && matchId == ""
+    )
+    || (
+      // Caso permitido: perfil criado com exatamente um palpite válido.
+      isValidId(matchId)
+      && request.resource.data.predictions.keys().hasOnly([matchId])
+      && predictionDataIsValid(
+        request.resource.data.predictions[matchId]
+      )
+      && matchIsOpenForPrediction(matchId)
+    );
+}
+
+    /**
+ * Define o formato seguro para um usuário criar o próprio perfil.
+ *
+ * O documento precisa usar o UID do Firebase Auth como ID, começar sem
+ * privilégios administrativos e sem pontos manipulados. Isso evita que uma
+ * conta recém-criada entre no ranking com vantagem ou vire admin sozinha.
+ */
+function ownerCreateIsSafe(playerId) {
+  return isOwner(playerId)
+    && playerDataIsValid(request.resource.data, playerId)
+
+    // Permite perfil novo sem e-mail ou já vinculado ao e-mail autenticado.
+    && request.resource.data.email in [
+      "",
+      request.auth.token.email
+    ]
+
+    // Usuário comum nunca pode se criar como administrador.
+    && request.resource.data.isAdmin == false
+
+    // Ranking sempre começa zerado para perfis criados pelo próprio usuário.
+    && request.resource.data.points == 0
+    && request.resource.data.exactHits == 0
+    && request.resource.data.partialHits == 0
+    && request.resource.data.errorHits == 0
+
+    // Ajuste manual só pode ser definido posteriormente por fluxo administrativo.
+    && request.resource.data.get("manualPointsAdjustment", 0) == 0
+    && request.resource.data.get(
+      "manualPointsAdjustmentUpdatedAt",
+      ""
+    ) == ""
+
+    && ownerCreatePredictionsAreSafe();
+}
+
+    /**
+ * Confirma que campos críticos continuam iguais ao documento já salvo.
+ *
+ * Essa é uma camada extra de proteção. Mesmo que alguém tente alterar o
+ * Firestore manualmente, não pode mudar ID, pontos, estatísticas, ajuste
+ * manual ou status administrativo pelo fluxo de jogador comum.
+ */
+function protectedPlayerFieldsUnchanged() {
+  return request.resource.data.id == resource.data.id
+
+    /**
+     * O e-mail só pode mudar no caso especial de perfil legado sem e-mail.
+     * Depois de vinculado, ele permanece fixo para impedir troca de dono.
+     */
+    && (
+      request.resource.data.email == resource.data.email
+      || ownerEmailUpdateIsSafe()
+    )
+
+    // Permissão administrativa nunca pode ser definida pelo próprio jogador.
+    && request.resource.data.isAdmin == resource.data.isAdmin
+
+    // Dados do ranking são protegidos contra alteração manual no navegador.
+    && request.resource.data.points == resource.data.points
+    && request.resource.data.exactHits == resource.data.exactHits
+    && request.resource.data.partialHits == resource.data.partialHits
+    && request.resource.data.errorHits == resource.data.errorHits
+
+    // Ajustes administrativos também não podem ser modificados pelo dono.
+    && request.resource.data.get(
+      "manualPointsAdjustment",
+      0
+    ) == resource.data.get("manualPointsAdjustment", 0)
+
+    && request.resource.data.get(
+      "manualPointsAdjustmentUpdatedAt",
+      ""
+    ) == resource.data.get(
+      "manualPointsAdjustmentUpdatedAt",
+      ""
+    );
+}
+
+    /**
+ * Define quando um jogador pode atualizar um perfil existente.
+ *
+ * O acesso é permitido pelo UID do Firebase Auth ou, durante a migração,
+ * pelo e-mail de um perfil legado. Mesmo sendo dono, a pessoa ainda precisa
+ * passar pelas regras de campos protegidos e alteração segura de palpites.
+ */
+function ownerUpdateIsSafe(playerId) {
+  return (
+      isOwner(playerId)
+      || isLegacyEmailOwner()
+    )
+
+    // O documento final precisa continuar respeitando o modelo Player.
+    && playerDataIsValid(request.resource.data, playerId)
+
+    // Protege pontuação, ID, isAdmin e ajustes administrativos.
+    && protectedPlayerFieldsUnchanged()
+
+    // Limita os campos que podem mudar e valida palpites/e-mail.
+    && ownerChangedFieldsAreSafe();
+}
 
     match /matches/{matchId} {
       allow read: if true;
