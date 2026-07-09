@@ -41,6 +41,7 @@ export function mergePredictionMaps(
     ...primaryPredictions,
   };
 
+  //object.entries retorna um array de pares [chave, valor] do objeto.
   for (const [matchId, secondaryPrediction] of Object.entries(
     secondaryPredictions
   )) {
