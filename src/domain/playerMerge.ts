@@ -116,7 +116,7 @@ export function mergePredictionMaps(
   return mergedPredictions;
 }
 
-/// Verifica se dois mapas de palpites são equivalentes.
+// Verifica se dois mapas de palpites são equivalentes.
 //
 // Essa função compara:
 // - se possuem a mesma quantidade de partidas;
@@ -333,15 +333,6 @@ export function mergePlayersByEmail(
 
   // Retorna a lista final com duplicados por e-mail já mesclados.
   return mergedPlayers;
-}
-
-// Conta quantos palpites o jogador possui.
-//
-// predictions é um objeto onde cada chave é o id de uma partida.
-// Object.keys pega somente essas chaves.
-// length conta quantas chaves existem.
-function countPredictions(player: Player): number {
-  return Object.keys(player.predictions || {}).length;
 }
 
 // Conta quantos palpites o jogador possui.
