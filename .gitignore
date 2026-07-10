@@ -8,4 +8,13 @@ coverage/
 !.env.example
 .vercel
 
-testsprite_tests\tmp\config.json
+# Ferramentas executáveis usadas apenas localmente
+/.codex-tools/
+
+# Arquivos pessoais de contexto para IA
+/Context.md
+/CHATGPT_CONTEXT.md
+/CHATGPT_CONTEXT_ATUAL.md
+
+# Testes e arquivos temporários gerados pelo TestSprite
+/testsprite_tests/
