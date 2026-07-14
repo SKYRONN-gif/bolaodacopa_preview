@@ -85,3 +85,70 @@ export function sortMatchesBySchedule(matches: Match[]): Match[] {
     });
   });
 }
+
+// Recria a lista de partidas padrão sem perder resultados
+// que já foram finalizados.
+//
+// Para cada partida padrão, procura uma partida atual com o mesmo id.
+// Se a partida atual estiver finalizada e possuir um placar válido,
+// mantém seu status e resultado.
+export function preserveFinishedResults(
+  defaultMatches: Match[],
+  currentMatches: Match[]
+): Match[] {
+  const matchesWithPreservedResults = defaultMatches.map((defaultMatch) => {
+    // Procura a versão atual da partida pelo mesmo id.
+    const currentMatch = currentMatches.find(
+      (match) => match.id === defaultMatch.id
+    );
+
+    // Mantém o resultado quando a partida atual já foi finalizada
+    // e possui os dois placares preenchidos.
+    if (
+      currentMatch?.status === 'finished' &&
+      typeof currentMatch.scoreA === 'number' &&
+      typeof currentMatch.scoreB === 'number'
+    ) {
+      return {
+        ...defaultMatch,
+        status: 'finished' as const,
+        scoreA: currentMatch.scoreA,
+        scoreB: currentMatch.scoreB,
+      };
+    }
+
+    // Quando não existe resultado finalizado para preservar,
+    // mantém a partida padrão sem alterações.
+    return defaultMatch;
+  });
+
+  return sortMatchesBySchedule(matchesWithPreservedResults);
+}
+
+// Adiciona uma partida à lista ou substitui a partida
+// que já possui o mesmo id.
+//
+// Depois da operação, sempre retorna as partidas
+// ordenadas por data e horário.
+export function upsertMatch(
+  matches: Match[],
+  nextMatch: Match
+): Match[] {
+  const alreadyExists = matches.some(
+    (match) => match.id === nextMatch.id
+  );
+
+  // Se a partida ainda não existe,
+  // adiciona ela ao final de uma nova lista.
+  if (!alreadyExists) {
+    return sortMatchesBySchedule([...matches, nextMatch]);
+  }
+
+  // Se a partida já existe, substitui apenas a partida
+  // com o mesmo id e mantém todas as outras.
+  const updatedMatches = matches.map((match) =>
+    match.id === nextMatch.id ? nextMatch : match
+  );
+
+  return sortMatchesBySchedule(updatedMatches);
+}
