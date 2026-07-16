@@ -1,237 +1,96 @@
 import {
   collection,
+  deleteField,
   doc,
   getDocs,
   onSnapshot,
   setDoc,
   writeBatch,
 } from 'firebase/firestore';
+
 import { sortMatchesBySchedule } from '../domain/matches';
 import { db } from '../firebase';
-import { Match } from '../types';
+import type { Match } from '../types';
 import { normalizeMatchDocument } from './firestoreNormalizers';
 
 interface SubscribeToMatchesParams {
-  // onData: Recebe a lista de partidas. metadata avisa se é cache (true) ou servidor (false).
-  onData: (matches: Match[], metadata: { fromCache: boolean }) => void;
-  // onEmpty: O banco confirmou que não existe nenhuma partida cadastrada.
+  onData: (
+    matches: Match[],
+    metadata: { fromCache: boolean }
+  ) => void;
+
   onEmpty: (metadata: { fromCache: boolean }) => void;
-  // onError: Falha de rede, permissão negada, etc.
+
   onError: (error: unknown) => void;
 }
 
-// O Firestore aceita no máximo 500 operações simultâneas num writeBatch.
-// Usamos 450 como limite seguro para quebrar grandes salvamentos em "lotes menores"
-// e evitar que o servidor rejeite a operação por excesso de tamanho.
+// Limite interno usado para dividir gravações grandes
+// em batches menores.
+//
+// Cada batch é atômico individualmente, mas o processo completo
+// pode ser parcialmente concluído caso um lote posterior falhe.
 const FIRESTORE_BATCH_WRITE_LIMIT = 450;
 
-// O Firestore quebra (crasha) se você tentar salvar um campo com valor `undefined`.
-// Essa função limpa o objeto antes de enviá-lo para o banco.
-function removeUndefinedFields<T extends Record<string, unknown>>(value: T) {
+// Variações conhecidas de nomes de seleções.
+//
+// O objetivo é permitir a comparação entre fontes
+// que utilizam idiomas ou grafias diferentes.
+const MATCH_TEAM_ALIASES: Record<string, string> = {
+  // República Tcheca / Czechia
+  'rep checa': 'republica tcheca',
+  'republica checa': 'republica tcheca',
+  'republica tcheca': 'republica tcheca',
+  czechia: 'republica tcheca',
+  'czech republic': 'republica tcheca',
 
-  // 3. Monta o objeto de volta (fromEntries)
-  return Object.fromEntries(
+  // Congo
+  'rd congo': 'republica democratica do congo',
+  'dr congo': 'republica democratica do congo',
+  'congo dr': 'republica democratica do congo',
+  'democratic republic of congo':
+    'republica democratica do congo',
+  'republica democratica congo':
+    'republica democratica do congo',
+  'republica democratica do congo':
+    'republica democratica do congo',
 
-    // 1. Desmonta o objeto numa lista de pares [chave, valor] (entries)
-    Object.entries(value)
+  // Holanda / Países Baixos
+  holanda: 'paises baixos',
+  netherlands: 'paises baixos',
+  netherland: 'paises baixos',
 
-    // 2. Filtra a lista, jogando no lixo qualquer par onde o valor seja "undefined"
-    .filter(([, fieldValue]) => fieldValue !== undefined)
-  );
-}
+  // Costa do Marfim
+  'ivory coast': 'costa do marfim',
+  'cote d ivoire': 'costa do marfim',
+  'cote divoire': 'costa do marfim',
 
-// Sanitiza e prepara o objeto da partida antes de enviá-lo para o Firestore.
-function toFirestoreMatch(match: Match) {
+  // Estados Unidos
+  usa: 'estados unidos',
+  'united states': 'estados unidos',
+  'united states of america': 'estados unidos',
 
-  //Valida se o jogo acabou e se tem placar válido
-  const isFinishedWithScore =
-    match.status === 'finished' &&
-    typeof match.scoreA === 'number' &&
-    typeof match.scoreB === 'number';
+  // Coreia do Sul
+  'south korea': 'coreia do sul',
+  'korea republic': 'coreia do sul',
 
-    //Passa para a função removeUndefinedFields retirar os undefined
-  return removeUndefinedFields({
-    id: match.id,
-    teamA: match.teamA,
-    teamB: match.teamB,
-    flagA: match.flagA,
-    flagB: match.flagB,
-    date: match.date,
-    time: match.time,
-    startsAt: match.startsAt,
-    startsAtMs: match.startsAtMs,
-    status: match.status,
-    group: match.group,
-    venue: match.venue,
-    city: match.city,
-    apiFixtureId: match.apiFixtureId,
-    logoA: match.logoA,
-    logoB: match.logoB,
-    source: match.source,
+  // Bósnia e Herzegovina
+  'bosnia and herzegovina': 'bosnia e herzegovina',
+  'bosnia herzegovina': 'bosnia e herzegovina',
 
-    // Se o jogo não acabou, força os gols a serem undefined.
-    // Assim, a removeUndefinedFields vai apagar essas chaves
-    scoreA: isFinishedWithScore ? match.scoreA : undefined,
-    scoreB: isFinishedWithScore ? match.scoreB : undefined,
-  });
-}
+  // Outros nomes comuns
+  germany: 'alemanha',
+  spain: 'espanha',
+  switzerland: 'suica',
+  sweden: 'suecia',
+  turkiye: 'turquia',
+  turkey: 'turquia',
+  morocco: 'marrocos',
+  japan: 'japao',
+  paraguay: 'paraguai',
+};
 
-// Salva uma lista gigante de partidas no banco dividindo tudo em "lotes seguros" (Batches).
-async function writeMatchesInBatches(
-  matches: Match[],
-  options?: { merge?: boolean }
-): Promise<void> {
-  
-// Abre a prancheta de gravação e começa a contar quantas ordens já anotamos.
-  let batch = writeBatch(db);
-  let pendingWrites = 0;
-
-  for (const match of matches) {
-   // Apenas "escreve o endereço" no envelope para o Firestore saber onde salvar depois.
-    const matchRef = doc(db, 'matches', match.id);
-
-    //passa pela função que limpa o corpo
-    const firestoreMatch = toFirestoreMatch(match);
-
-    // Se pediram merge, faz um "Upsert" (atualiza sem apagar os dados velhos).
-    if (options?.merge) {
-      batch.set(matchRef, firestoreMatch, { merge: true });
-    } else {
-      //se não, faz um novo
-      batch.set(matchRef, firestoreMatch);
-    }
-
-    // Anota que colocamos mais um item para uma segunda brantch
-    pendingWrites++;
-
-if (pendingWrites >= FIRESTORE_BATCH_WRITE_LIMIT) {
-      await batch.commit();    // ... 1. Despacha o lote inteiro pro banco de uma vez!
-      batch = writeBatch(db);  // ... 2. Pega uma prancheta nova e limpa.
-      pendingWrites = 0;       // ... 3. Zera o contador pra começar o próximo lote.
-    }
-  }
-
-  //salva a sobra do beta
-  if (pendingWrites > 0) {
-    await batch.commit();
-  }
-}
-
-export function subscribeToMatches({
-  onData,
-  onEmpty,
-  onError,
-}: SubscribeToMatchesParams) {
-
-  //apontada para as matches do banco
-  const matchesCol = collection(db, 'matches');
-
-  //abre a conexão em tempo real
-  return onSnapshot(
-    matchesCol,
-    { includeMetadataChanges: true },// Fica de olho se mudou de Cache (offline) para Servidor (online)
-    (snapshot) => {
-      const metadata = { fromCache: snapshot.metadata.fromCache };
-
-      // Se não tiver nenhum jogo cadastrado, avisa o App e para por aqui.
-      if (snapshot.empty) {
-        onEmpty(metadata);
-        return;
-      }
-
-      const loadedMatches: Match[] = [];
-
-      // Passa por cada documento bruto que desceu do banco.
-      snapshot.forEach((document) => {
-        //normaliza o documento
-        const match = normalizeMatchDocument(document.id, document.data());
-
-        // Se a partida estiver íntegra, entra na lista de carregadas.
-        if (match) {
-          loadedMatches.push(match);
-        }
-      });
-
-      // ele passa a lista pela função `sortMatchesBySchedule`.
-      // Assim, o App sempre recebe os jogos ordenados por data/hora cronológica!
-      onData(sortMatchesBySchedule(loadedMatches), metadata);
-    },
-    (error) => {
-      onError(error);
-    }
-  );
-}
-
-//salva ou sobreescreve completamente uma partida no banco
-export async function saveMatch(match: Match): Promise<void> {
-  //espera a operação de rede terminar (await)
-  await setDoc(
-
-    //monta o endereço exato do banco (banco >> Coleção matches >> id da pt)
-    doc(db, 'matches', match.id), 
-    
-    //passa pela função para garantir que não tem undefined
-    toFirestoreMatch(match));
-}
-
-//faz a seed inicial ou em massa da tabela de partidas
-export async function seedMatches(matches: Match[]): Promise<void> {
-  
-  //joga o trabalho pra writeMatchesInBatches e espera (await) terminar
-  await writeMatchesInBatches(matches);
-}
-
-//sincroniza uma lista de jogos com o banco de dados seguramento
-export async function syncDefaultMatches(matches: Match[]): Promise<void> {
-  
-  //verifica todas as partidas que tem no banco
-  const snapshot = await getDocs(collection(db, 'matches'));
-
-  //cria um dicionario para buscar rapidas
-  const existingMatches = new Map<string, Match>();
-
-  //guarda os jogos finais que irão pro banco
-  const nextMatches: Match[] = [];
-
-  //passa por cada doc, normalizando ele
-  snapshot.forEach((document) => {
-    const match = normalizeMatchDocument(document.id, document.data());
-
-    //e guarda cada partida com o id como chave
-    if (match) {
-      existingMatches.set(document.id, match);
-    }
-  });
-
-  for (const match of matches) {
-
-    //busca no dicionario se o id já existe
-    const existingMatch = existingMatches.get(match.id);
-
-    //cria uma copia para poder modificar
-    const nextMatch: Match = { ...match };
-
-    //verifica se o jogo já existia no banco e se atende aos criterio
-    if (
-      existingMatch?.status === 'finished' &&
-      typeof existingMatch.scoreA === 'number' &&
-      typeof existingMatch.scoreB === 'number'
-    ) {
-      //se sim, resgata como está lá e cola na copia
-      nextMatch.status = 'finished';
-      nextMatch.scoreA = existingMatch.scoreA;
-      nextMatch.scoreB = existingMatch.scoreB;
-    }
-
-    nextMatches.push(nextMatch); //joga a copia protegida e atualizada dentro da caixa final
-  }
-
-  //manda para salvar na função das batches
-  await writeMatchesInBatches(nextMatches);
-}
-
-// O formato bruto e imprevisível de UM jogo que vem lá do servidor da API externa.
-// Cheio de opcionais (?) e "null" porque dados da internet nem sempre vêm completos.
+// Estrutura esperada para uma partida retornada
+// pelo endpoint interno de jogos da Copa.
 interface ApiWorldCupMatch {
   id: string;
   apiFixtureId?: string;
@@ -254,17 +113,18 @@ interface ApiWorldCupMatch {
   source?: string;
 }
 
-// Traz a lista de partidas (matches) e metadados de controle (total, hora da sincronização).
+// Estrutura esperada para a resposta completa do endpoint.
+//
+// matches continua como unknown[] até que cada item
+// seja validado em tempo de execução.
 interface WorldCupFixturesResponse {
-  matches: ApiWorldCupMatch[];
+  matches: unknown[];
   total: number;
   source: string;
   fallbackFrom?: string | null;
   syncedAt: string;
 }
 
-// Configurações que passamos para a NOSSA função de sincronização.
-// Serve para não baixar o banco de dados inteiro à toa (ex: pedir só os de hoje).
 interface SyncWorldCupMatchesFromApiOptions {
   limit?: number;
   today?: boolean;
@@ -272,8 +132,6 @@ interface SyncWorldCupMatchesFromApiOptions {
   finished?: boolean;
 }
 
-// O balanço que a função devolve para o App depois que o processo termina.
-// Avisa quantos jogos realmente entraram no nosso banco (imported) vs quantos tinham lá (totalFromApi)
 interface SyncWorldCupMatchesFromApiResult {
   imported: number;
   totalFromApi: number;
@@ -281,13 +139,279 @@ interface SyncWorldCupMatchesFromApiResult {
   fallbackFrom?: string | null;
 }
 
-// Monta o endereço da internet (URL) traduzindo os filtros do App para uma "Query String".
-function buildWorldCupFixturesUrl(options?: SyncWorldCupMatchesFromApiOptions) {
+type TeamOrder = 'same' | 'inverted' | 'different';
 
-  // Inicia o construtor nativo do JS que gerencia parâmetros de URL com segurança.
+interface ToFirestoreMatchOptions {
+  // Quando uma gravação usa merge, campos omitidos permanecem
+  // no documento. Essa opção remove placares antigos quando
+  // a partida não possui um resultado final válido.
+  deleteScoresWhenMissing?: boolean;
+}
+
+// Verifica se um valor desconhecido é um objeto
+// que pode ser inspecionado com segurança.
+function isRecord(
+  value: unknown
+): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isOptionalStringOrNull(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    typeof value === 'string'
+  );
+}
+
+function isOptionalNumberOrNull(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === 'number' && Number.isFinite(value))
+  );
+}
+
+// Remove campos de primeiro nível cujo valor seja undefined,
+// evitando enviá-los ao Firestore.
+//
+// Valores null são preservados.
+function removeUndefinedFields<
+  T extends Record<string, unknown>,
+>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([, fieldValue]) => fieldValue !== undefined
+    )
+  );
+}
+
+// Converte uma partida da aplicação para o formato
+// utilizado nas gravações do Firestore.
+//
+// Os placares só são mantidos quando a partida está finalizada
+// e possui os dois valores numéricos.
+function toFirestoreMatch(
+  match: Match,
+  options?: ToFirestoreMatchOptions
+) {
+  const isFinishedWithScore =
+    match.status === 'finished' &&
+    typeof match.scoreA === 'number' &&
+    typeof match.scoreB === 'number';
+
+  const missingScoreValue =
+    options?.deleteScoresWhenMissing
+      ? deleteField()
+      : undefined;
+
+  return removeUndefinedFields({
+    id: match.id,
+    teamA: match.teamA,
+    teamB: match.teamB,
+    flagA: match.flagA,
+    flagB: match.flagB,
+    date: match.date,
+    time: match.time,
+    startsAt: match.startsAt,
+    startsAtMs: match.startsAtMs,
+    status: match.status,
+    group: match.group,
+    venue: match.venue,
+    city: match.city,
+    apiFixtureId: match.apiFixtureId,
+    logoA: match.logoA,
+    logoB: match.logoB,
+    source: match.source,
+
+    scoreA: isFinishedWithScore
+      ? match.scoreA
+      : missingScoreValue,
+
+    scoreB: isFinishedWithScore
+      ? match.scoreB
+      : missingScoreValue,
+  });
+}
+
+// Salva uma lista de partidas em batches menores.
+//
+// Com merge: true:
+// - atualiza os campos enviados;
+// - preserva campos não enviados;
+// - remove placares antigos quando a partida não possui
+//   um resultado final válido.
+//
+// Sem merge, o conteúdo anterior do documento é substituído.
+async function writeMatchesInBatches(
+  matches: Match[],
+  options?: { merge?: boolean }
+): Promise<void> {
+  let batch = writeBatch(db);
+  let pendingWrites = 0;
+
+  for (const match of matches) {
+    const matchRef = doc(db, 'matches', match.id);
+
+    const firestoreMatch = toFirestoreMatch(match, {
+      deleteScoresWhenMissing: Boolean(options?.merge),
+    });
+
+    if (options?.merge) {
+      batch.set(matchRef, firestoreMatch, {
+        merge: true,
+      });
+    } else {
+      batch.set(matchRef, firestoreMatch);
+    }
+
+    pendingWrites++;
+
+    if (
+      pendingWrites >= FIRESTORE_BATCH_WRITE_LIMIT
+    ) {
+      await batch.commit();
+
+      batch = writeBatch(db);
+      pendingWrites = 0;
+    }
+  }
+
+  // Confirma o último lote quando ele não atingiu
+  // o limite definido para os batches anteriores.
+  if (pendingWrites > 0) {
+    await batch.commit();
+  }
+}
+
+// Mantém a lista de partidas sincronizada com o Firestore.
+//
+// includeMetadataChanges permite distinguir snapshots
+// carregados do cache de snapshots confirmados pelo servidor.
+//
+// Cada documento passa pelo normalizador antes de ser entregue
+// ao hook responsável pelas partidas.
+export function subscribeToMatches({
+  onData,
+  onEmpty,
+  onError,
+}: SubscribeToMatchesParams) {
+  const matchesCol = collection(db, 'matches');
+
+  return onSnapshot(
+    matchesCol,
+    { includeMetadataChanges: true },
+    (snapshot) => {
+      const metadata = {
+        fromCache: snapshot.metadata.fromCache,
+      };
+
+      if (snapshot.empty) {
+        onEmpty(metadata);
+        return;
+      }
+
+      const loadedMatches: Match[] = [];
+
+      snapshot.forEach((matchDocument) => {
+        const match = normalizeMatchDocument(
+          matchDocument.id,
+          matchDocument.data()
+        );
+
+        if (match) {
+          loadedMatches.push(match);
+        }
+      });
+
+      onData(
+        sortMatchesBySchedule(loadedMatches),
+        metadata
+      );
+    },
+    onError
+  );
+}
+
+// Cria ou substitui uma partida no Firestore.
+//
+// Como não utiliza merge, campos antigos que não estiverem
+// no objeto serializado deixam de existir no documento.
+export async function saveMatch(
+  match: Match
+): Promise<void> {
+  await setDoc(
+    doc(db, 'matches', match.id),
+    toFirestoreMatch(match)
+  );
+}
+
+// Salva uma lista de partidas usando batches.
+//
+// Caso sejam necessários vários lotes, o processo completo
+// não é atômico entre todos eles.
+export async function seedMatches(
+  matches: Match[]
+): Promise<void> {
+  await writeMatchesInBatches(matches);
+}
+
+// Sincroniza a lista padrão de partidas com o Firestore.
+//
+// Resultados já finalizados são preservados para impedir
+// que uma nova sincronização apague placares cadastrados.
+//
+// Partidas extras que já existem no banco não são removidas,
+// pois somente os jogos recebidos são gravados novamente.
+export async function syncDefaultMatches(
+  matches: Match[]
+): Promise<void> {
+  const snapshot = await getDocs(
+    collection(db, 'matches')
+  );
+
+  const existingMatches = new Map<string, Match>();
+  const nextMatches: Match[] = [];
+
+  snapshot.forEach((matchDocument) => {
+    const match = normalizeMatchDocument(
+      matchDocument.id,
+      matchDocument.data()
+    );
+
+    if (match) {
+      existingMatches.set(matchDocument.id, match);
+    }
+  });
+
+  for (const match of matches) {
+    const existingMatch = existingMatches.get(match.id);
+    const nextMatch: Match = { ...match };
+
+    if (
+      existingMatch?.status === 'finished' &&
+      typeof existingMatch.scoreA === 'number' &&
+      typeof existingMatch.scoreB === 'number'
+    ) {
+      nextMatch.status = 'finished';
+      nextMatch.scoreA = existingMatch.scoreA;
+      nextMatch.scoreB = existingMatch.scoreB;
+    }
+
+    nextMatches.push(nextMatch);
+  }
+
+  await writeMatchesInBatches(nextMatches);
+}
+
+// Monta a URL do endpoint interno com os filtros solicitados.
+//
+// Apenas parâmetros ativos são incluídos na query string.
+function buildWorldCupFixturesUrl(
+  options?: SyncWorldCupMatchesFromApiOptions
+) {
   const params = new URLSearchParams();
 
-  // Converte números e booleanos para o formato de texto que a API espera (ex: '1' para true).
   if (options?.limit && options.limit > 0) {
     params.set('limit', String(options.limit));
   }
@@ -304,225 +428,339 @@ function buildWorldCupFixturesUrl(options?: SyncWorldCupMatchesFromApiOptions) {
     params.set('finished', '1');
   }
 
-  //Transforma as regras inseridas em um texto formatado (Ex: "limit=5&today=1")
   const queryString = params.toString();
 
-  // Se tem parâmetros, cola eles depois do '?'. Se estiver vazio, retorna só a rota base.
   return queryString
     ? `/api/worldcup-fixtures?${queryString}`
     : '/api/worldcup-fixtures';
 }
 
-//Checa se o objeto que chegou da internet
-// é realmente uma partida válida antes de deixá-lo entrar no nosso sistema.
-function isValidApiWorldCupMatch(match: ApiWorldCupMatch) {
+// Valida a estrutura geral da resposta do endpoint.
+//
+// A asserção de tipos do TypeScript não valida dados
+// recebidos em tempo de execução, por isso essa verificação
+// ocorre antes de acessar os campos da resposta.
+function parseWorldCupFixturesResponse(
+  value: unknown
+): WorldCupFixturesResponse {
+  if (!isRecord(value)) {
+    throw new Error(
+      'Resposta inválida da API: objeto principal não encontrado.'
+    );
+  }
+
+  if (!Array.isArray(value.matches)) {
+    throw new Error(
+      'Resposta inválida da API: matches não encontrado.'
+    );
+  }
+
+  if (
+    typeof value.total !== 'number' ||
+    !Number.isFinite(value.total)
+  ) {
+    throw new Error(
+      'Resposta inválida da API: total inválido.'
+    );
+  }
+
+  if (typeof value.source !== 'string') {
+    throw new Error(
+      'Resposta inválida da API: source inválido.'
+    );
+  }
+
+  if (typeof value.syncedAt !== 'string') {
+    throw new Error(
+      'Resposta inválida da API: syncedAt inválido.'
+    );
+  }
+
+  if (!isOptionalStringOrNull(value.fallbackFrom)) {
+    throw new Error(
+      'Resposta inválida da API: fallbackFrom inválido.'
+    );
+  }
+
+  return {
+    matches: value.matches,
+    total: value.total,
+    source: value.source,
+    fallbackFrom: value.fallbackFrom as
+      | string
+      | null
+      | undefined,
+    syncedAt: value.syncedAt,
+  };
+}
+
+// Valida cada item recebido da API antes que ele
+// seja tratado como uma partida da Copa.
+function isValidApiWorldCupMatch(
+  value: unknown
+): value is ApiWorldCupMatch {
+  if (!isRecord(value)) {
+    return false;
+  }
+
   return (
-
-    // Checa se os campos obrigatórios básicos existem e são textos de verdade
-    typeof match.id === 'string' &&
-    typeof match.teamA === 'string' &&
-    typeof match.teamB === 'string' &&
-    typeof match.date === 'string' &&
-    typeof match.time === 'string' &&
-    typeof match.startsAt === 'string' &&
-
-    //garante que é um número real e utilizável,
-    Number.isFinite(match.startsAtMs) &&
-
-    //só aceita jogos que estejam com estes dois status exatos.
-    (match.status === 'scheduled' || match.status === 'finished')
+    typeof value.id === 'string' &&
+    typeof value.teamA === 'string' &&
+    typeof value.teamB === 'string' &&
+    typeof value.date === 'string' &&
+    typeof value.time === 'string' &&
+    typeof value.startsAt === 'string' &&
+    typeof value.startsAtMs === 'number' &&
+    Number.isFinite(value.startsAtMs) &&
+    typeof value.group === 'string' &&
+    (value.status === 'scheduled' ||
+      value.status === 'finished') &&
+    isOptionalStringOrNull(value.apiFixtureId) &&
+    isOptionalStringOrNull(value.shortTeamA) &&
+    isOptionalStringOrNull(value.shortTeamB) &&
+    isOptionalStringOrNull(value.logoA) &&
+    isOptionalStringOrNull(value.logoB) &&
+    isOptionalNumberOrNull(value.scoreA) &&
+    isOptionalNumberOrNull(value.scoreB) &&
+    isOptionalStringOrNull(value.venue) &&
+    isOptionalStringOrNull(value.city) &&
+    isOptionalStringOrNull(value.source)
   );
 }
 
-//prepara nomes das seleções, para não ter parecidas
-function normalizeMatchText(value?: string | null) {
-
-// Limpa o texto tirando acentos, pontuações, letras maiúsculas e espaços extras.
+// Normaliza nomes de seleções para permitir comparação
+// entre fontes que usam idiomas ou grafias diferentes.
+function normalizeMatchText(
+  value?: string | null
+) {
   const normalized = (value || '')
-    .normalize('NFD')                 // Separa a letra do acento
-    .replace(/[\u0300-\u036f]/g, '')  // Joga o acento fora
-    .toLowerCase()                    // Transforma tudo em minúsculo
-    .replace(/[^a-z0-9]+/g, ' ')      // Troca qualquer caractere estranho por espaço
-    .trim();                          // Remove espaços sobrando nas pontas
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 
-    // Mapeia as variações ou nomes para o nosso padrão oficial.
-  const aliases: Record<string, string> = {
-
-    // República Tcheca / Czechia
-'rep checa': 'republica tcheca',
-'republica checa': 'republica tcheca',
-'republica tcheca': 'republica tcheca',
-'czechia': 'republica tcheca',
-'czech republic': 'republica tcheca',
-
-    // Congo
-    'rd congo': 'republica democratica do congo',
-    'dr congo': 'republica democratica do congo',
-    'congo dr': 'republica democratica do congo',
-    'democratic republic of congo': 'republica democratica do congo',
-    'republica democratica congo': 'republica democratica do congo',
-    'republica democratica do congo': 'republica democratica do congo',
-
-    // Holanda / Países Baixos
-    'holanda': 'paises baixos',
-    'netherlands': 'paises baixos',
-    'netherland': 'paises baixos',
-
-    // Costa do Marfim
-    'ivory coast': 'costa do marfim',
-    'cote d ivoire': 'costa do marfim',
-    'cote divoire': 'costa do marfim',
-
-    // Estados Unidos
-    'usa': 'estados unidos',
-    'united states': 'estados unidos',
-    'united states of america': 'estados unidos',
-
-    // Coreia
-    'south korea': 'coreia do sul',
-    'korea republic': 'coreia do sul',
-
-    // Bósnia
-    'bosnia and herzegovina': 'bosnia e herzegovina',
-    'bosnia herzegovina': 'bosnia e herzegovina',
-
-    // Outros nomes comuns
-    'germany': 'alemanha',
-    'spain': 'espanha',
-    'switzerland': 'suica',
-    'sweden': 'suecia',
-    'turkiye': 'turquia',
-    'turkey': 'turquia',
-    'morocco': 'marrocos',
-    'japan': 'japao',
-    'paraguay': 'paraguai',
-  };
-
-  // Retorna a versão padronizada do dicionário. Se não existir no dicionário, 
-  // retorna a palavra que passou
-  return aliases[normalized] || normalized;
+  return (
+    MATCH_TEAM_ALIASES[normalized] || normalized
+  );
 }
 
-// Remove espaços acidentais da data
-function normalizeMatchDate(value?: string | null) {
+function normalizeMatchDate(
+  value?: string | null
+) {
   return (value || '').trim();
 }
 
-// Remove espaços acidentais do horário
-function normalizeMatchTime(value?: string | null) {
+function normalizeMatchTime(
+  value?: string | null
+) {
   return (value || '').trim();
 }
 
-//deixa ficar a mesma ordem ou a ordem invertida
-function areSameTeams(apiMatch: ApiWorldCupMatch, existingMatch: Match) {
-
-// 1. Passa os 4 times (os 2 da API e os 2 do nosso Banco) pela nossa "Máquina de Lavar Textos"
-  // para ignorar acentos, letras maiúsculas e diferenças de idioma (ex: Holanda vs Netherlands).
+// Identifica a orientação das seleções entre
+// uma partida da API e uma partida já existente.
+//
+// A orientação é importante porque scoreA e scoreB
+// estão ligados diretamente a teamA e teamB.
+function getTeamOrder(
+  apiMatch: ApiWorldCupMatch,
+  existingMatch: Match
+): TeamOrder {
   const apiTeamA = normalizeMatchText(apiMatch.teamA);
   const apiTeamB = normalizeMatchText(apiMatch.teamB);
 
-  const existingTeamA = normalizeMatchText(existingMatch.teamA);
-  const existingTeamB = normalizeMatchText(existingMatch.teamB);
+  const existingTeamA = normalizeMatchText(
+    existingMatch.teamA
+  );
 
-  // 2. Testa a Rota Direta: A é igual a A, e B é igual a B?
-  const sameOrder = apiTeamA === existingTeamA && apiTeamB === existingTeamB;
-  
-  // 3. Testa a Rota Espelhada (Invertida): O A da API é o nosso B, e o B da API é o nosso A?
-  const invertedOrder = apiTeamA === existingTeamB && apiTeamB === existingTeamA;
+  const existingTeamB = normalizeMatchText(
+    existingMatch.teamB
+  );
 
-  // 4. Se qualquer uma das rotas for verdadeira, significa que é o exato mesmo jogo.
-  return sameOrder || invertedOrder;
+  const sameOrder =
+    apiTeamA === existingTeamA &&
+    apiTeamB === existingTeamB;
+
+  if (sameOrder) {
+    return 'same';
+  }
+
+  const invertedOrder =
+    apiTeamA === existingTeamB &&
+    apiTeamB === existingTeamA;
+
+  if (invertedOrder) {
+    return 'inverted';
+  }
+
+  return 'different';
 }
 
-// Verifica se a partida que veio da API vai acontecer no mesmo momento da partida 
-// que já temos salva no banco de dados.
-function areSameSchedule(apiMatch: ApiWorldCupMatch, existingMatch: Match) {
+// Retorna true quando as partidas envolvem
+// as mesmas duas seleções, mesmo em ordem invertida.
+function areSameTeams(
+  apiMatch: ApiWorldCupMatch,
+  existingMatch: Match
+) {
+  return (
+    getTeamOrder(apiMatch, existingMatch) !==
+    'different'
+  );
+}
 
-  //verifica se as datas da api e do banco são as mesmas
+// Considera o horário equivalente quando:
+// - a data textual é igual;
+// - e o horário textual é igual ou o timestamp
+//   possui diferença máxima de 90 minutos.
+//
+// A comparação pressupõe que as duas fontes usam
+// o mesmo formato textual de data.
+function areSameSchedule(
+  apiMatch: ApiWorldCupMatch,
+  existingMatch: Match
+) {
   const sameDate =
-    normalizeMatchDate(apiMatch.date) === normalizeMatchDate(existingMatch.date);
+    normalizeMatchDate(apiMatch.date) ===
+    normalizeMatchDate(existingMatch.date);
 
-      //verifica se o horario da api e do banco são as mesmas
   const sameTime =
-    normalizeMatchTime(apiMatch.time) === normalizeMatchTime(existingMatch.time);
+    normalizeMatchTime(apiMatch.time) ===
+    normalizeMatchTime(existingMatch.time);
 
-    // Se o jogo mudou das 16:00 para as 16:30, a diferença é de apenas 30 minutos.
-  // Como 30m é menor que nossa janela máxima de 90m (1000ms * 60s * 90m), ele aceita!
   const closeStartsAt =
     Number.isFinite(apiMatch.startsAtMs) &&
     Number.isFinite(existingMatch.startsAtMs) &&
-    Math.abs(apiMatch.startsAtMs - existingMatch.startsAtMs) <= 1000 * 60 * 90;
+    Math.abs(
+      apiMatch.startsAtMs -
+        existingMatch.startsAtMs
+    ) <=
+      1000 * 60 * 90;
 
-    // Só é o mesmo jogo se a DATA for idêntica. 
-  // E o horário tem que bater exato OU estar dentro da margem de 90 minutos de diferença.
   return sameDate && (sameTime || closeStartsAt);
 }
 
-// Descobre se a partida foi importada da API externa ou criada manualmente no app.
-function isApiGeneratedMatchId(matchId: string) {
+// Considera IDs totalmente numéricos como IDs
+// gerados pela API.
+//
+// Essa identificação depende da convenção adotada pelo projeto.
+function isApiGeneratedMatchId(
+  matchId: string
+) {
   return /^\d+$/.test(matchId);
 }
 
-// Tenta descobrir se a partida que chegou da API já existe no nosso banco de dados
+// Procura uma partida existente correspondente
+// à partida recebida da API.
+//
+// A busca prioriza partidas com IDs locais por times e horário,
+// preservando IDs que podem estar vinculados a palpites existentes.
+//
+// Depois tenta apiFixtureId e, por último,
+// qualquer partida com os mesmos times e horário.
 function findExistingMatchForApiMatch(
   apiMatch: ApiWorldCupMatch,
   existingMatches: Map<string, Match>
 ) {
-
-  // Transforma o Dicionário (Map) numa Lista (Array).
-  //Map só consegue buscar se tivermos o ID exato.
-  // O Array nos dá acesso ao superpoder '.find()', que permite buscar por características.
-  const matches = Array.from(existingMatches.values());
-
-// Procura uma partida que foi criada por um humano (não tem ID de API), 
-  // mas que é exatamente o mesmo jogo (mesmos times e horário).
-  const byTeamsAndSchedule = matches.find(
-    (existingMatch) =>
-      !isApiGeneratedMatchId(existingMatch.id) && // Garante que foi criado na mão
-      areSameTeams(apiMatch, existingMatch) &&    // Usa o nosso Detector de Espelhos
-      areSameSchedule(apiMatch, existingMatch)    // Usa a nossa Janela de 90 minutos
+  const matches = Array.from(
+    existingMatches.values()
   );
 
-  // EARLY RETURN
-// Se encontrou na Tentativa 1, devolve a partida e encerra a função aqui mesmo.
-  // Não tem por que gastar processamento procurando nas outras tentativas.
+  const byTeamsAndSchedule = matches.find(
+    (existingMatch) =>
+      !isApiGeneratedMatchId(existingMatch.id) &&
+      areSameTeams(apiMatch, existingMatch) &&
+      areSameSchedule(apiMatch, existingMatch)
+  );
+
   if (byTeamsAndSchedule) {
     return byTeamsAndSchedule;
   }
 
-//TENTATIVA 2
-// Se não tem jogo manual, procura pela ligação oficial: O ID da API que salvamos no banco
-  // bate com o ID da API que acabou de chegar?
+  const apiFixtureId =
+    apiMatch.apiFixtureId || apiMatch.id;
+
   const byApiFixtureId = matches.find(
     (existingMatch) =>
-      existingMatch.apiFixtureId &&
-      existingMatch.apiFixtureId === (apiMatch.apiFixtureId || apiMatch.id)
+      existingMatch.apiFixtureId === apiFixtureId
   );
 
   if (byApiFixtureId) {
     return byApiFixtureId;
   }
 
-  //TENTATIVA 3 (O Plano de Contingência):
-  // Se o ID falhou (bug da API), procura por qualquer partida no banco que tenha 
-  // os mesmos times e horários, independente de onde ela veio.
-  const byAnyTeamsAndSchedule = matches.find(
+  return matches.find(
     (existingMatch) =>
       areSameTeams(apiMatch, existingMatch) &&
       areSameSchedule(apiMatch, existingMatch)
   );
-
-  return byAnyTeamsAndSchedule;
 }
 
-function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match {
-  //verifica se a partida acabou com placar
+// Converte uma partida da API para o formato Match.
+//
+// Quando a partida existente possui os times na ordem inversa,
+// os dados da API também são invertidos para manter teamA/teamB,
+// scoreA/scoreB, bandeiras e logos alinhados aos palpites existentes.
+//
+// Um resultado local finalizado é preservado quando a API
+// não fornece um novo placar final válido.
+function apiMatchToMatch(
+  match: ApiWorldCupMatch,
+  existingMatch?: Match
+): Match {
+  const teamOrder = existingMatch
+    ? getTeamOrder(match, existingMatch)
+    : 'same';
+
+  const shouldInvertApiSides =
+    teamOrder === 'inverted';
+
+  const apiTeamA = shouldInvertApiSides
+    ? match.teamB
+    : match.teamA;
+
+  const apiTeamB = shouldInvertApiSides
+    ? match.teamA
+    : match.teamB;
+
+  const apiShortTeamA = shouldInvertApiSides
+    ? match.shortTeamB
+    : match.shortTeamA;
+
+  const apiShortTeamB = shouldInvertApiSides
+    ? match.shortTeamA
+    : match.shortTeamB;
+
+  const apiLogoA = shouldInvertApiSides
+    ? match.logoB
+    : match.logoA;
+
+  const apiLogoB = shouldInvertApiSides
+    ? match.logoA
+    : match.logoB;
+
+  const rawApiScoreA = shouldInvertApiSides
+    ? match.scoreB
+    : match.scoreA;
+
+  const rawApiScoreB = shouldInvertApiSides
+    ? match.scoreA
+    : match.scoreB;
+
+  const apiScoreA =
+    typeof rawApiScoreA === 'number'
+      ? rawApiScoreA
+      : undefined;
+
+  const apiScoreB =
+    typeof rawApiScoreB === 'number'
+      ? rawApiScoreB
+      : undefined;
+
   const isFinishedWithScore =
     match.status === 'finished' &&
-    typeof match.scoreA === 'number' &&
-    typeof match.scoreB === 'number';
+    apiScoreA !== undefined &&
+    apiScoreB !== undefined;
 
-    //se a partida existir ou não e o status for finished, e tiver número no placar, ela não é finalizada? foi isso que li aqui
   const shouldPreserveExistingFinishedScore =
     existingMatch?.status === 'finished' &&
     typeof existingMatch.scoreA === 'number' &&
@@ -530,108 +768,158 @@ function apiMatchToMatch(match: ApiWorldCupMatch, existingMatch?: Match): Match 
     !isFinishedWithScore;
 
   return {
-    ...existingMatch, //preserva a partida existente
+    ...existingMatch,
 
-    //converte a partida da api, para Match
     id: existingMatch?.id || match.id,
-    apiFixtureId: match.apiFixtureId || match.id,
+    apiFixtureId:
+      match.apiFixtureId || match.id,
 
-    teamA: match.teamA,
-    teamB: match.teamB,
+    teamA: apiTeamA,
+    teamB: apiTeamB,
 
-    flagA: match.shortTeamA?.toUpperCase() || existingMatch?.flagA || '🏳️',
-flagB: match.shortTeamB?.toUpperCase() || existingMatch?.flagB || '🏳️',
+    flagA:
+      apiShortTeamA?.toUpperCase() ||
+      existingMatch?.flagA ||
+      '🏳️',
 
-    logoA: match.logoA || existingMatch?.logoA || null,
-    logoB: match.logoB || existingMatch?.logoB || null,
+    flagB:
+      apiShortTeamB?.toUpperCase() ||
+      existingMatch?.flagB ||
+      '🏳️',
+
+    logoA:
+      apiLogoA ||
+      existingMatch?.logoA ||
+      null,
+
+    logoB:
+      apiLogoB ||
+      existingMatch?.logoB ||
+      null,
 
     date: match.date,
     time: match.time,
     startsAt: match.startsAt,
     startsAtMs: match.startsAtMs,
 
-    group: match.group || existingMatch?.group || 'Copa do Mundo 2026',
-    venue: match.venue || existingMatch?.venue,
-    city: match.city || existingMatch?.city,
+    group:
+      match.group ||
+      existingMatch?.group ||
+      'Copa do Mundo 2026',
 
-    source: match.source || existingMatch?.source,
+    venue:
+      match.venue ||
+      existingMatch?.venue,
+
+    city:
+      match.city ||
+      existingMatch?.city,
+
+    source:
+      match.source ||
+      existingMatch?.source,
 
     status: shouldPreserveExistingFinishedScore
       ? 'finished'
-      : match.status === 'finished'
-        ? 'finished'
-        : 'scheduled',
+      : match.status,
 
     scoreA: shouldPreserveExistingFinishedScore
       ? existingMatch.scoreA
       : isFinishedWithScore
-        ? match.scoreA ?? undefined
+        ? apiScoreA
         : undefined,
 
     scoreB: shouldPreserveExistingFinishedScore
       ? existingMatch.scoreB
       : isFinishedWithScore
-        ? match.scoreB ?? undefined
+        ? apiScoreB
         : undefined,
   };
 }
 
+// Consulta o endpoint interno de partidas, compara o resultado
+// com o Firestore e salva as partidas correspondentes.
+//
+// Quando finished é utilizado, partidas finalizadas que ainda
+// não existem no banco são ignoradas. Nesse modo, o objetivo
+// é atualizar resultados de partidas já cadastradas.
 export async function syncWorldCupMatchesFromApi(
   options?: SyncWorldCupMatchesFromApiOptions
 ): Promise<SyncWorldCupMatchesFromApiResult> {
-  //response seria a resposta, ele ta esperando o para buscar as opções da url
-  const response = await fetch(buildWorldCupFixturesUrl(options));
+  const response = await fetch(
+    buildWorldCupFixturesUrl(options)
+  );
 
   if (!response.ok) {
-    throw new Error(`Erro ao buscar jogos da API. Status: ${response.status}`);
+    throw new Error(
+      `Erro ao buscar jogos da API. Status: ${response.status}`
+    );
   }
 
-  //pega o json da api
-  const data = (await response.json()) as WorldCupFixturesResponse;
+  const rawData: unknown = await response.json();
 
-  //se não tiver partidas: joga oe rro
-  if (!Array.isArray(data.matches)) {
-    throw new Error('Resposta inválida da API: matches não encontrado.');
-  }
+  const data =
+    parseWorldCupFixturesResponse(rawData);
 
-  //pega as coleções de partidas do banco
-  const snapshot = await getDocs(collection(db, 'matches'));
-  const existingMatches = new Map<string, Match>();
+  const snapshot = await getDocs(
+    collection(db, 'matches')
+  );
 
-  //normaliza eles
-  snapshot.forEach((document) => {
-    const match = normalizeMatchDocument(document.id, document.data());
+  const existingMatches =
+    new Map<string, Match>();
 
-    //se tiver, seta como uma nova pt
+  snapshot.forEach((matchDocument) => {
+    const match = normalizeMatchDocument(
+      matchDocument.id,
+      matchDocument.data()
+    );
+
     if (match) {
-      existingMatches.set(document.id, match);
+      existingMatches.set(
+        matchDocument.id,
+        match
+      );
     }
   });
 
-  //
-const validApiMatches = data.matches.filter(isValidApiWorldCupMatch);
+  const validApiMatches = data.matches.filter(
+    isValidApiWorldCupMatch
+  );
 
-//
-const nextMatches = validApiMatches
-  .map((apiMatch) => {
-    //procura uma partida api e do banco
-    const existingMatch = findExistingMatchForApiMatch(apiMatch, existingMatches);
+  const nextMatches = validApiMatches
+    .map((apiMatch) => {
+      const existingMatch =
+        findExistingMatchForApiMatch(
+          apiMatch,
+          existingMatches
+        );
 
-    //se ão tiver partida e tiver ou não tiver finished, retorna null
-    if (!existingMatch && options?.finished) {
-      return null;
-    }
+      if (
+        !existingMatch &&
+        options?.finished
+      ) {
+        return null;
+      }
 
-    return apiMatchToMatch(apiMatch, existingMatch);
-  })
-  .filter((match): match is Match => Boolean(match));
+      return apiMatchToMatch(
+        apiMatch,
+        existingMatch
+      );
+    })
+    .filter(
+      (match): match is Match =>
+        Boolean(match)
+    );
 
-  await writeMatchesInBatches(nextMatches, { merge: true });
+  await writeMatchesInBatches(nextMatches, {
+    merge: true,
+  });
 
   return {
     imported: nextMatches.length,
     totalFromApi: data.total,
     source: data.source,
-    fallbackFrom: data.fallbackFrom || null,
+    fallbackFrom:
+      data.fallbackFrom || null,
   };
 }
